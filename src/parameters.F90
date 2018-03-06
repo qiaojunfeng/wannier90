@@ -136,7 +136,7 @@ module w90_parameters
   logical,           public, save :: fermi_surface_plot
   integer,           public, save :: fermi_surface_num_points
   character(len=20), public, save :: fermi_surface_plot_format
-  real(kind=dp),             save :: fermi_energy
+  real(kind=dp),     public, save :: fermi_energy
 
   ! module  k p a t h
   logical,                    public, save :: kpath
@@ -249,6 +249,20 @@ module w90_parameters
   logical,           public, save :: geninterp_alsofirstder
   logical,           public, save :: geninterp_single_file
   ! [gp-end, Jun 1, 2012]
+
+  ! MCAE-begin
+  logical,           public, save :: mcae
+  real(kind=dp),     public, save :: mcae_kmesh_spacing
+  integer,           public, save :: mcae_kmesh(3)
+  integer,           public, save :: mcae_adpt_kmesh
+  real(kind=dp),     public, save :: mcae_adpt_kmesh_thresh
+  logical,           public, save :: mcae_adpt_smr
+  real(kind=dp),     public, save :: mcae_adpt_smr_fac
+  real(kind=dp),     public, save :: mcae_adpt_smr_max
+  integer,           public, save :: mcae_smr_index
+  real(kind=dp),     public, save :: mcae_smr_fixed_en_width
+
+  ! MCAE-end
 
   ! [gp-begin, Apr 12, 2012]
   ! BoltzWann variables
@@ -1579,6 +1593,51 @@ contains
     call param_get_keyword('geninterp_single_file', found, l_value=geninterp_single_file)
     ! [gp-end, Jun 1, 2012]
 
+    !%%%%%%%%%%%%%%%%%%%%
+    ! MCAE
+    !%%%%%%%%%%%%%%%%%%%%
+    mcae = .false.
+    call param_get_keyword('mcae', found, l_value=mcae)
+
+    mcae_adpt_kmesh           = 1
+    call param_get_keyword('mcae_adpt_kmesh',found,&
+            i_value=mcae_adpt_kmesh)
+    if (mcae_adpt_kmesh<1)&
+            call io_error(&
+                    'Error:  mcae_adpt_kmesh must be a positive integer')
+
+    mcae_adpt_kmesh_thresh           = 100.0_dp
+    call param_get_keyword('mcae_adpt_kmesh_thresh',found,&
+            r_value=mcae_adpt_kmesh_thresh)
+
+    mcae_adpt_smr = adpt_smr
+    call param_get_keyword('mcae_adpt_smr',found,l_value=mcae_adpt_smr)
+
+    mcae_adpt_smr_fac = adpt_smr_fac
+    call param_get_keyword('mcae_adpt_smr_fac',found,&
+            r_value=mcae_adpt_smr_fac)
+    if (found .and. (mcae_adpt_smr_fac <= 0._dp)) call io_error&
+            ('Error: mcae_adpt_smr_fac must be greater than zero')
+
+    mcae_adpt_smr_max = adpt_smr_max
+    call param_get_keyword('mcae_adpt_smr_max',found,&
+            r_value=mcae_adpt_smr_max)
+    if (mcae_adpt_smr_max <= 0._dp) call io_error&
+            ('Error: mcae_adpt_smr_max must be greater than zero')
+
+    ! By default: use the "global" smearing index
+    mcae_smr_index = smr_index
+    call param_get_keyword('mcae_smr_type',found,c_value=ctmp)
+    if (found) mcae_smr_index = get_smearing_index(ctmp,'mcae_smr_type')
+
+    mcae_smr_fixed_en_width = smr_fixed_en_width
+    call param_get_keyword('mcae_smr_fixed_en_width',found,&
+            r_value=mcae_smr_fixed_en_width)
+    if (found .and. (mcae_smr_fixed_en_width < 0._dp)) call io_error&
+            ('Error: mcae_smr_fixed_en_width must be greater than or equal to zero')
+
+    ! MCAE end
+
     ! [gp-begin, Apr 12, 2012]
     !%%%%%%%%%%%%%%%%%%%%
     ! Boltzmann transport
@@ -2018,6 +2077,11 @@ contains
          should_be_defined=berry, &
          module_kmesh=berry_kmesh, &
          module_kmesh_spacing=berry_kmesh_spacing)
+
+    call get_module_kmesh(moduleprefix='mcae', &
+            should_be_defined=mcae, &
+            module_kmesh=mcae_kmesh, &
+            module_kmesh_spacing=mcae_kmesh_spacing)
 
     call get_module_kmesh(moduleprefix='gyrotropic', &
          should_be_defined=gyrotropic, &
@@ -5774,6 +5838,19 @@ contains
     call comms_bcast(geninterp,1)
     call comms_bcast(geninterp_alsofirstder,1)
     call comms_bcast(geninterp_single_file,1)
+
+    ! mcae
+    call comms_bcast(mcae,1)
+    call comms_bcast(mcae_kmesh_spacing,1)
+    call comms_bcast(mcae_kmesh(1),3)
+    call comms_bcast(mcae_adpt_kmesh,1)
+    call comms_bcast(mcae_adpt_kmesh_thresh,1)
+    call comms_bcast(mcae_adpt_smr,1)
+    call comms_bcast(mcae_adpt_smr_fac,1)
+    call comms_bcast(mcae_adpt_smr_max,1)
+    call comms_bcast(mcae_smr_fixed_en_width,1)
+    call comms_bcast(mcae_smr_index,1)
+
     ! [gp-begin, Apr 12, 2012]
     ! BoltzWann variables
     call comms_bcast(boltzwann,1) 

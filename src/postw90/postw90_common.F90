@@ -341,6 +341,20 @@ module w90_postw90_common
     call comms_bcast(geninterp,1)
     call comms_bcast(geninterp_alsofirstder,1)
     call comms_bcast(geninterp_single_file,1)
+
+    ! mcae
+    call comms_bcast(mcae,1)
+    call comms_bcast(mcae_kmesh_spacing,1)
+    call comms_bcast(mcae_kmesh(1),3)
+    call comms_bcast(mcae_adpt_kmesh,1)
+    call comms_bcast(mcae_adpt_kmesh_thresh,1)
+    call comms_bcast(mcae_adpt_smr,1)
+    call comms_bcast(mcae_adpt_smr_fac,1)
+    call comms_bcast(mcae_adpt_smr_max,1)
+    call comms_bcast(mcae_smr_fixed_en_width,1)
+    call comms_bcast(mcae_smr_index,1)
+    call comms_bcast(fermi_energy,1)
+
     ! [gp-begin, Apr 12, 2012]
     ! BoltzWann variables
     call comms_bcast(boltzwann,1) 

@@ -34,6 +34,7 @@ program postw90
 
   use w90_boltzwann
   use w90_geninterp
+  use w90_mcae
 
   implicit none
 
@@ -242,6 +243,8 @@ program postw90
   endif
 
   if(geninterp) call geninterp_main
+
+  if(mcae) call mcae_main
 
   if(boltzwann) call boltzwann_main
 
