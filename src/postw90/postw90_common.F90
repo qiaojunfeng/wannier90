@@ -354,6 +354,7 @@ module w90_postw90_common
     call comms_bcast(mcae_smr_fixed_en_width,1)
     call comms_bcast(mcae_smr_index,1)
     call comms_bcast(fermi_energy,1)
+    call comms_bcast(mcae_num_elec,1)
 
     ! [gp-begin, Apr 12, 2012]
     ! BoltzWann variables

@@ -261,6 +261,7 @@ module w90_parameters
   real(kind=dp),     public, save :: mcae_adpt_smr_max
   integer,           public, save :: mcae_smr_index
   real(kind=dp),     public, save :: mcae_smr_fixed_en_width
+  real(kind=dp),     public, save :: mcae_num_elec
 
   ! MCAE-end
 
@@ -1635,6 +1636,11 @@ contains
             r_value=mcae_smr_fixed_en_width)
     if (found .and. (mcae_smr_fixed_en_width < 0._dp)) call io_error&
             ('Error: mcae_smr_fixed_en_width must be greater than or equal to zero')
+
+    call param_get_keyword('mcae_num_elec',found,&
+            r_value=mcae_num_elec)
+    if (found .and. (mcae_num_elec <= 0._dp)) call io_error&
+            ('Error: mcae_num_elec must be greater than zero')
 
     ! MCAE end
 
@@ -5850,6 +5856,7 @@ contains
     call comms_bcast(mcae_adpt_smr_max,1)
     call comms_bcast(mcae_smr_fixed_en_width,1)
     call comms_bcast(mcae_smr_index,1)
+    call comms_bcast(mcae_num_elec,1)
 
     ! [gp-begin, Apr 12, 2012]
     ! BoltzWann variables

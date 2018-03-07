@@ -29,19 +29,22 @@ module w90_mcae
   use w90_parameters, only    : num_wann, recip_lattice, real_lattice, &
           timing_level, mcae_kmesh, mcae_adpt_kmesh, mcae_adpt_kmesh_thresh, &
           fermi_energy, mcae_adpt_smr, mcae_adpt_smr_fac, mcae_adpt_smr_max, &
-          mcae_smr_fixed_en_width, mcae_smr_index
+          mcae_smr_fixed_en_width, mcae_smr_index, mcae_num_elec
   use w90_io, only            : io_error,stdout,io_stopwatch,io_file_unit,seedname
   use w90_comms
   use w90_io, only            : io_date
+
   implicit none
 
   private 
-  public :: mcae_main
-  integer            :: num_kpts
-  real(kind=dp), dimension(:), allocatable      :: globalsum
+  public                                          :: mcae_main
+
+  integer                                         :: num_kpts
+  real(kind=dp), dimension(:), allocatable        :: globalsum
   real(kind=dp), dimension(:,:), allocatable      :: kpoints, localkpoints
-  character(len=50)               :: file_name
-  integer            :: file_unit
+  real(kind=dp)                                   :: ef
+  character(len=50)                               :: file_name
+  integer                                         :: file_unit
 
 contains
     
@@ -104,6 +107,7 @@ contains
     !%%%%%%%%%%% variable declaration ends %%%%%%%%%%%%
     if (on_root) then
         ! write k-resolved mcae to file
+        write(stdout, '(1x,a30,f18.14)') 'fermi_energy: ', ef
         write(stdout,'(/,1x,a)')&
                 '---------------------------------'
         write(stdout,'(1x,a)')&
@@ -149,7 +153,7 @@ contains
 
     use w90_get_oper, only      : get_HH_R, HH_R
     use w90_utility, only       : utility_diagonalize
-    use w90_postw90_common, only : pw90common_fourier_R_to_k, pw90common_get_occ
+    use w90_postw90_common, only : pw90common_fourier_R_to_k
 
     !!!!!!!!!!!
     integer, dimension(:), allocatable              :: kpointidx, localkpointidx
@@ -302,9 +306,18 @@ contains
     ! And now, each node calculates its own k points
     write(outfile_name_node, '(a,i3)') 'eigs',102+my_node_id
     open(unit=102+my_node_id, file=outfile_name_node, form='formatted')
+
+    ! first we interpolate eigenvalues
+    call interp_eig()
+
+    ! then get fermi_energy
+    ef = get_ef(localeig, num_wann, counts(my_node_id), mcae_num_elec, mcae_smr_fixed_en_width, mcae_smr_index)
+
+    ! finally get the eband
     do i=1, counts(my_node_id)
        localsum(i) = sum_k(i)
     end do
+
     close(102+my_node_id)
     if (on_root .and. (timing_level>0)) call io_stopwatch('mcae_main: sum_k',2)
 
@@ -359,34 +372,52 @@ contains
     return
 
   contains
-    function sum_k(ikpt)
 
+    subroutine interp_eig()
+    ! interpolate eigenvalues on this proccess
       implicit none
-
-      integer                                         :: ikpt
-      real(kind=dp), dimension(3)                     :: kpt
-      real(kind=dp)                                   :: sum_k
-      real(kind=dp), dimension(:), allocatable        :: occ
 
       complex(kind=dp), dimension(:,:), allocatable   :: HH
       complex(kind=dp), dimension(:,:), allocatable   :: UU
+      integer                                         :: i
+      real(kind=dp), dimension(3)                     :: kpt
       !
-
-      kpt = localkpoints(:,ikpt)
-
       allocate(HH(num_wann,num_wann),stat=ierr)
       if (ierr/=0) call io_error('Error in allocating HH in mcae_interp')
       allocate(UU(num_wann,num_wann),stat=ierr)
       if (ierr/=0) call io_error('Error in allocating UU in mcae_interp')
+
+      do i=1, counts(my_node_id)
+        kpt = localkpoints(:,i)
+        ! Here I get the band energies
+        call pw90common_fourier_R_to_k(kpt,HH_R,HH,0)
+        call utility_diagonalize(HH,num_wann,localeig(:,i),UU)
+      end do
+
+      if (allocated(HH)) deallocate(HH)
+      if (allocated(UU)) deallocate(UU)
+
+      return
+
+    end subroutine interp_eig
+
+    function sum_k(ikpt)
+    ! compute band energy on the kpoint ikpt
+      implicit none
+
+      integer, intent(in)                             :: ikpt
+      real(kind=dp), dimension(3)                     :: kpt
+      real(kind=dp)                                   :: sum_k
+      real(kind=dp), dimension(:), allocatable        :: occ
+
+      !
+      kpt = localkpoints(:,ikpt)
 
       allocate(occ(num_wann),stat=ierr)
       if (ierr/=0) call io_error('Error allocating occ in mcae_interp::sum_k.')
 
       write(*, '(a, i4, a, 3(f10.7,1x))') 'on node ', my_node_id, ', kpt ', kpt
 
-      ! Here I get the band energies
-      call pw90common_fourier_R_to_k(kpt,HH_R,HH,0)
-      call utility_diagonalize(HH,num_wann,localeig(:,ikpt),UU)
       ! get occupancies
       occ = get_occ(localeig(:,ikpt))
       !call pw90common_get_occ(localeig(:,i),occ,fermi_energy)
@@ -398,46 +429,160 @@ contains
       sum_k = dot_product(occ, localeig(:,ikpt)) * kweight
 
       if (allocated(occ)) deallocate(occ)
-      if (allocated(HH)) deallocate(HH)
-      if (allocated(UU)) deallocate(UU)
 
       write(*, '(a, i4, a, 3(f10.7,1x), a)') 'on node ', my_node_id, ', kpt ', &
               kpt, ' done'
-
 
       return
 
     end function sum_k
 
     function get_occ(eig)
-        use w90_parameters, only : fermi_energy
-        use w90_utility, only        : utility_wgauss
+    ! get occupancy for an array of eigenvalues
+      use w90_utility, only        : utility_wgauss
 
-        implicit none
+      implicit none
 
-        real(kind=dp) :: get_occ(num_wann), eig(num_wann)
-        real(kind=dp) :: arg, eta_smr
-        integer       :: i
+      real(kind=dp) :: get_occ(num_wann), eig(num_wann)
+      real(kind=dp) :: arg, eta_smr
+      integer       :: i
 
-        if(mcae_adpt_smr) then
-            ! Eq.(35) YWVS07
-            !vdum(:)=del_eig(m,:)-del_eig(n,:)
-            !joint_level_spacing=sqrt(dot_product(vdum(:),vdum(:)))*Delta_k
-            !eta_smr=min(joint_level_spacing*kubo_adpt_smr_fac,&
-            !        kubo_adpt_smr_max)
-            call io_error('mcae_adpt_smr not implemented')
-        else
-            eta_smr=mcae_smr_fixed_en_width
-        endif
+      if(mcae_adpt_smr) then
+          ! Eq.(35) YWVS07
+          !vdum(:)=del_eig(m,:)-del_eig(n,:)
+          !joint_level_spacing=sqrt(dot_product(vdum(:),vdum(:)))*Delta_k
+          !eta_smr=min(joint_level_spacing*kubo_adpt_smr_fac,&
+          !        kubo_adpt_smr_max)
+          call io_error('mcae_adpt_smr not implemented')
+      else
+          eta_smr=mcae_smr_fixed_en_width
+      endif
 
-        do i=1,num_wann
-            arg = (fermi_energy - eig(i))/eta_smr
-            get_occ(i)=utility_wgauss(arg,mcae_smr_index)
-        end do
+      do i=1,num_wann
+          arg = (ef - eig(i))/eta_smr
+          get_occ(i)=utility_wgauss(arg,mcae_smr_index)
+      end do
 
-        return
+      return
 
     end function get_occ
+
+    function get_ef(eig, nbnd, nks, nelec, degauss, ngauss)
+      !--------------------------------------------------------------------
+      !
+      !     Finds the Fermi energy - Gaussian Broadening
+      !     (see Methfessel and Paxton, PRB 40, 3616 (1989 )
+      !
+
+      implicit none
+      !  I/O variables
+      integer, intent(in) :: nks, nbnd, ngauss
+      real(dp), intent(in) :: eig(nbnd, nks), degauss, nelec
+      real(dp) :: get_ef
+      !
+      real(DP), parameter :: eps = 1.0d-10
+      integer, parameter :: maxiter = 300
+      ! internal variables
+      real(dp) :: Ef, Eup, Elw, sumkup, sumklw, sumkmid
+      integer :: i, kpoint
+      !
+      !      find bounds for the Fermi energy. Very safe choice!
+      !
+      Elw = eig(1, 1)
+      Eup = eig(nbnd, 1)
+      do kpoint = 2, nks
+          Elw = min(Elw, eig(1, kpoint) )
+          Eup = max(Eup, eig(nbnd, kpoint) )
+      enddo
+      Eup = Eup + 2 * degauss
+      Elw = Elw - 2 * degauss
+      !
+      ! find min and max across procs
+      !
+      call comms_allreduce(Eup, 1, 'MAX')
+      call comms_allreduce(Elw, 1, 'MIN')
+      !
+      !      Bisection method
+      !
+      sumkup = sum_num_states(eig, nbnd, nks, degauss, ngauss, Eup)
+      sumklw = sum_num_states(eig, nbnd, nks, degauss, ngauss, Elw)
+
+      if (on_root) then
+        if ( (sumkup - nelec) < -eps .or. (sumklw - nelec) > eps )  &
+          call io_error('get_ef: internal error, cannot bracket Ef')
+      end if
+
+      do i = 1, maxiter
+        Ef = (Eup + Elw) / 2.d0
+        sumkmid = sum_num_states(eig, nbnd, nks, degauss, ngauss, Ef)
+        if (abs (sumkmid-nelec) < eps) then
+          get_ef = Ef
+          return
+        elseif ( (sumkmid-nelec) < -eps) then
+          Elw = Ef
+        else
+          Eup = Ef
+        endif
+      enddo
+
+      if (on_root) then
+        write(stdout, '(5x,"Warning: too many iterations in bisection"/ &
+              &      5x,"Ef = ",f10.6," sumk = ",f10.6," electrons")' ) &
+              Ef, sumkmid
+      end if
+      !
+      get_ef = Ef
+
+      return
+
+    end function get_ef
+
+    function sum_num_states(eig, nbnd, nks, degauss, ngauss, e)
+      !-----------------------------------------------------------------------
+      !
+      !     This function computes the number of states under a given energy e
+      !
+      !
+      ! function which compute the smearing
+      use w90_utility, only        : utility_wgauss
+
+      implicit none
+
+      ! Output variable
+      real(dp) :: sum_num_states
+      ! Input variables
+      integer, intent(in) :: nks, nbnd, ngauss
+      ! input: the total number of K points
+      ! input: the number of bands
+      ! input: the type of smearing
+      real(DP), intent(in) :: eig(nbnd, nks), degauss, e
+      ! input: the weight of the k points
+      ! input: the energy eigenvalues
+      ! input: gaussian broadening
+      ! input: the energy to check
+      !
+      ! local variables
+      !
+      real(DP) ::sum1
+      integer :: ik, ibnd
+      ! counter on k points
+      ! counter on the band energy
+      !
+      sum_num_states = 0.d0
+      do ik = 1, nks
+          sum1 = 0.d0
+          do ibnd = 1, nbnd
+              sum1 = sum1 + utility_wgauss( (e-eig(ibnd, ik) ) / degauss, ngauss)
+          enddo
+          sum_num_states = sum_num_states + kweight * sum1
+      enddo
+
+      ! result stored on all procs
+      call comms_allreduce(sum_num_states, 1, 'SUM')
+
+      return
+
+    end function sum_num_states
 
   end subroutine mcae_main
 
