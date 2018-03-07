@@ -154,13 +154,18 @@ contains
     use w90_get_oper, only      : get_HH_R, HH_R
 
     !!!!!!!!!!!
-    integer, dimension(:), allocatable              :: kpointidx, localkpointidx
+    !integer, dimension(:), allocatable              :: kpointidx, localkpointidx
 
     integer            :: ierr, enidx
     character(len=50)  :: cdum
     !real(kind=dp), dimension(3)                     :: kpt, frac
     real(kind=dp), dimension(:,:), allocatable      :: localeig
-    real(kind=dp), dimension(:,:), allocatable      :: globaleig
+    ! first indice is band, second is kpoint
+    !real(kind=dp), dimension(:,:), allocatable      :: globaleig
+    ! first indice is band, second is kpoint
+    real(kind=dp), dimension(:,:,:), allocatable    :: localdel_eig
+    ! first indice is band, second is xyz direction, third is kpoint
+    real(kind=dp), dimension(:,:), allocatable      :: locallevelspacing
 
     integer, dimension(0:num_nodes-1)               :: counts
     integer, dimension(0:num_nodes-1)               :: displs
@@ -197,8 +202,8 @@ contains
     end if
 
     if (on_root) then
-       allocate(kpointidx(num_kpts),stat=ierr)
-       if (ierr/=0) call io_error('Error allocating kpointidx in mcae_interp.')
+       !allocate(kpointidx(num_kpts),stat=ierr)
+       !if (ierr/=0) call io_error('Error allocating kpointidx in mcae_interp.')
        allocate(kpoints(3,num_kpts),stat=ierr)
        if (ierr/=0) call io_error('Error allocating kpoints in mcae_interp.')
        allocate(globalsum(num_kpts),stat=ierr)
@@ -206,8 +211,8 @@ contains
     else
        ! On the other nodes, I still allocate them with size 1 to avoid 
        ! that some compilers still try to access the memory
-       allocate(kpointidx(1),stat=ierr)
-       if (ierr/=0) call io_error('Error allocating kpointidx in mcae_interp.')
+       !allocate(kpointidx(1),stat=ierr)
+       !if (ierr/=0) call io_error('Error allocating kpointidx in mcae_interp.')
        allocate(kpoints(1,1),stat=ierr)
        if (ierr/=0) call io_error('Error allocating kpoints in mcae_interp.')
        allocate(globalsum(1),stat=ierr)
@@ -231,6 +236,14 @@ contains
     
     allocate(localeig(num_wann,max(1,counts(my_node_id))),stat=ierr)
     if (ierr/=0) call io_error('Error allocating localeig in mcae_interp.')
+
+    if (mcae_adpt_smr) then
+      allocate(localdel_eig(num_wann,3,max(1,counts(my_node_id))),stat=ierr)
+      if (ierr/=0) call io_error('Error allocating localdel_eig in mcae_interp.')
+
+      allocate(locallevelspacing(num_wann,max(1,counts(my_node_id))),stat=ierr)
+      if (ierr/=0) call io_error('Error allocating locallevelspacing in mcae_interp.')
+    end if
 
     allocate(localsum(max(1,counts(my_node_id))),stat=ierr)
     if (ierr/=0) call io_error('Error allocating localsum in mcae_interp.')
@@ -268,7 +281,7 @@ contains
 
        ! (in crystallographic coordinates relative to the reciprocal lattice vectors)
        do i=1,num_kpts
-          kpointidx(i) = i
+          !kpointidx(i) = i
 
           !! modified from berry.F90
           loop_xyz = i
@@ -296,9 +309,9 @@ contains
     ! Now, I distribute the kpoints; 3* because I send kx, ky, kz
     call comms_scatterv(localkpoints,3*counts(my_node_id),kpoints,3*counts, 3*displs)
     ! Allocate at least one entry, even if we don't use it
-    allocate(localkpointidx(max(1,counts(my_node_id))),stat=ierr)
-    if (ierr/=0) call io_error('Error allocating localkpointidx in mcae_main.')
-    call comms_scatterv(localkpointidx,counts(my_node_id),kpointidx,counts, displs)
+    !allocate(localkpointidx(max(1,counts(my_node_id))),stat=ierr)
+    !if (ierr/=0) call io_error('Error allocating localkpointidx in mcae_main.')
+    !call comms_scatterv(localkpointidx,counts(my_node_id),kpointidx,counts, displs)
 
     if (on_root .and. (timing_level>0)) call io_stopwatch('mcae_main: sum_k',1)
     ! And now, each node calculates its own k points
@@ -355,13 +368,14 @@ contains
     if (allocated(kpoints)) deallocate(kpoints)
     if (allocated(globalsum)) deallocate(globalsum)
 
-    if (allocated(kpointidx)) deallocate(kpointidx)
-    if (allocated(localkpointidx)) deallocate(localkpointidx)
+    !if (allocated(kpointidx)) deallocate(kpointidx)
+    !if (allocated(localkpointidx)) deallocate(localkpointidx)
     if (allocated(localkpoints)) deallocate(localkpoints)
     !if (allocated(delHH)) deallocate(delHH)
     if (allocated(localeig)) deallocate(localeig)
-    !if (allocated(localdeleig)) deallocate(localdeleig)
-    if (allocated(globaleig)) deallocate(globaleig)
+    if (allocated(localdel_eig)) deallocate(localdel_eig)
+    if (allocated(locallevelspacing)) deallocate(locallevelspacing)
+    !if (allocated(globaleig)) deallocate(globaleig)
     !if (allocated(globaldeleig)) deallocate(globaldeleig)
     if (allocated(localsum)) deallocate(localsum)
 
@@ -385,8 +399,6 @@ contains
       complex(kind=dp), dimension(:,:,:), allocatable :: delHH
       integer                                         :: i
       real(kind=dp), dimension(3)                     :: kpt
-      real(kind=dp) :: del_eig(num_wann,3)
-      real(kind=dp) :: eig(num_wann), levelspacing_k(num_wann)
       !
       allocate(HH(num_wann,num_wann),stat=ierr)
       if (ierr/=0) call io_error('Error in allocating HH in mcae_interp')
@@ -398,8 +410,8 @@ contains
       do i=1, counts(my_node_id)
         kpt = localkpoints(:,i)
         if (mcae_adpt_smr) then
-          call wham_get_eig_deleig(kpt,eig,del_eig,HH,delHH,UU)
-          call dos_get_levelspacing(del_eig,dos_kmesh,levelspacing_k)
+          call wham_get_eig_deleig(kpt,localeig(:,i),localdel_eig(:,:,i),HH,delHH,UU)
+          call dos_get_levelspacing(localdel_eig(:,:,i),mcae_kmesh,locallevelspacing(:,i))
         else
           ! Here I get the band energies
           call pw90common_fourier_R_to_k(kpt,HH_R,HH,0)
@@ -409,6 +421,7 @@ contains
 
       if (allocated(HH)) deallocate(HH)
       if (allocated(UU)) deallocate(UU)
+      if (allocated(delHH)) deallocate(delHH)
 
       return
 
@@ -432,7 +445,7 @@ contains
       write(*, '(a, i4, a, 3(f10.7,1x))') 'on node ', my_node_id, ', kpt ', kpt
 
       ! get occupancies
-      occ = get_occ(localeig(:,ikpt))
+      occ = get_occ(ikpt)
       !call pw90common_get_occ(localeig(:,i),occ,fermi_energy)
       write(102+my_node_id, '(3(f10.7))') kpt(1:3)
       write(102+my_node_id,'((f14.7))') localeig(:,ikpt)
@@ -450,30 +463,25 @@ contains
 
     end function sum_k
 
-    function get_occ(eig)
+    function get_occ(ikpt)
     ! get occupancy for an array of eigenvalues
       use w90_utility, only        : utility_wgauss
 
       implicit none
 
-      real(kind=dp) :: get_occ(num_wann), eig(num_wann)
+      real(kind=dp) :: get_occ(num_wann)
       real(kind=dp) :: arg, eta_smr
-      integer       :: i
-
-      if(mcae_adpt_smr) then
-          ! Eq.(35) YWVS07
-          !vdum(:)=del_eig(m,:)-del_eig(n,:)
-          !joint_level_spacing=sqrt(dot_product(vdum(:),vdum(:)))*Delta_k
-          !eta_smr=min(joint_level_spacing*kubo_adpt_smr_fac,&
-          !        kubo_adpt_smr_max)
-          call io_error('mcae_adpt_smr not implemented')
-      else
-          eta_smr=mcae_smr_fixed_en_width
-      endif
+      integer       :: ikpt, i
 
       do i=1,num_wann
-          arg = (ef - eig(i))/eta_smr
-          get_occ(i)=utility_wgauss(arg,mcae_smr_index)
+        if(mcae_adpt_smr) then
+          ! Eq.(35) YWVS07
+          eta_smr=min(locallevelspacing(i,ikpt)*mcae_adpt_smr_fac,mcae_adpt_smr_max)
+        else
+          eta_smr=mcae_smr_fixed_en_width
+        endif
+        arg = (ef - localeig(i,ikpt))/eta_smr
+        get_occ(i)=utility_wgauss(arg,mcae_smr_index)
       end do
 
       return
