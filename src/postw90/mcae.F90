@@ -152,8 +152,6 @@ contains
   subroutine mcae_main()
 
     use w90_get_oper, only      : get_HH_R, HH_R
-    use w90_utility, only       : utility_diagonalize
-    use w90_postw90_common, only : pw90common_fourier_R_to_k
 
     !!!!!!!!!!!
     integer, dimension(:), allocatable              :: kpointidx, localkpointidx
@@ -375,23 +373,38 @@ contains
 
     subroutine interp_eig()
     ! interpolate eigenvalues on this proccess
+      use w90_utility, only        : utility_diagonalize
+      use w90_postw90_common, only : pw90common_fourier_R_to_k
+      use w90_wan_ham, only        : wham_get_eig_deleig
+      use w90_dos, only            : dos_get_levelspacing
+
       implicit none
 
       complex(kind=dp), dimension(:,:), allocatable   :: HH
       complex(kind=dp), dimension(:,:), allocatable   :: UU
+      complex(kind=dp), dimension(:,:,:), allocatable :: delHH
       integer                                         :: i
       real(kind=dp), dimension(3)                     :: kpt
+      real(kind=dp) :: del_eig(num_wann,3)
+      real(kind=dp) :: eig(num_wann), levelspacing_k(num_wann)
       !
       allocate(HH(num_wann,num_wann),stat=ierr)
       if (ierr/=0) call io_error('Error in allocating HH in mcae_interp')
       allocate(UU(num_wann,num_wann),stat=ierr)
       if (ierr/=0) call io_error('Error in allocating UU in mcae_interp')
+      allocate(delHH(num_wann,num_wann,3),stat=ierr)
+      if (ierr/=0) call io_error('Error in allocating delHH in dos')
 
       do i=1, counts(my_node_id)
         kpt = localkpoints(:,i)
-        ! Here I get the band energies
-        call pw90common_fourier_R_to_k(kpt,HH_R,HH,0)
-        call utility_diagonalize(HH,num_wann,localeig(:,i),UU)
+        if (mcae_adpt_smr) then
+          call wham_get_eig_deleig(kpt,eig,del_eig,HH,delHH,UU)
+          call dos_get_levelspacing(del_eig,dos_kmesh,levelspacing_k)
+        else
+          ! Here I get the band energies
+          call pw90common_fourier_R_to_k(kpt,HH_R,HH,0)
+          call utility_diagonalize(HH,num_wann,localeig(:,i),UU)
+        end if
       end do
 
       if (allocated(HH)) deallocate(HH)
