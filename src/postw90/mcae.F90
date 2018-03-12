@@ -320,9 +320,15 @@ contains
 
     ! first we interpolate eigenvalues
     call interp_eig()
+    if (on_root) then
+      write(stdout, '(a)') 'interp_eig done'
+    end if
 
     ! then get fermi_energy
     ef = get_ef(localeig, num_wann, counts(my_node_id), mcae_num_elec, mcae_smr_fixed_en_width, mcae_smr_index)
+    if (on_root) then
+      write(stdout, '(a)') 'get_ef done'
+    end if
 
     ! finally get the eband
     do i=1, counts(my_node_id)
@@ -411,7 +417,13 @@ contains
         kpt = localkpoints(:,i)
         if (mcae_adpt_smr) then
           call wham_get_eig_deleig(kpt,localeig(:,i),localdel_eig(:,:,i),HH,delHH,UU)
+          if (on_root) then
+            write(stdout, '(a)') 'wham_get_eig_deleig done'
+          end if
           call dos_get_levelspacing(localdel_eig(:,:,i),mcae_kmesh,locallevelspacing(:,i))
+          if (on_root) then
+            write(stdout, '(a)') 'dos_get_levelspacing done'
+          end if
         else
           ! Here I get the band energies
           call pw90common_fourier_R_to_k(kpt,HH_R,HH,0)
@@ -584,18 +596,24 @@ contains
       !
       ! local variables
       !
-      real(DP) ::sum1
+      real(DP) ::sum1, eta_smr
       integer :: ik, ibnd
       ! counter on k points
       ! counter on the band energy
       !
       sum_num_states = 0.d0
       do ik = 1, nks
-          sum1 = 0.d0
-          do ibnd = 1, nbnd
-              sum1 = sum1 + utility_wgauss( (e-eig(ibnd, ik) ) / degauss, ngauss)
-          enddo
-          sum_num_states = sum_num_states + kweight * sum1
+        sum1 = 0.d0
+        do ibnd = 1, nbnd
+          if(mcae_adpt_smr) then
+            ! Eq.(35) YWVS07
+            eta_smr=min(locallevelspacing(ibnd,ik)*mcae_adpt_smr_fac,mcae_adpt_smr_max)
+          else
+            eta_smr=degauss
+          endif
+          sum1 = sum1 + utility_wgauss( (e-eig(ibnd, ik) ) / eta_smr, ngauss)
+        enddo
+        sum_num_states = sum_num_states + kweight * sum1
       enddo
 
       ! result stored on all procs
