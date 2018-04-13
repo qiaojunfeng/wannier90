@@ -29,7 +29,7 @@ module w90_mcae
   use w90_parameters, only    : num_wann, recip_lattice, real_lattice, &
           timing_level, mcae_kmesh, mcae_adpt_kmesh, mcae_adpt_kmesh_thresh, &
           fermi_energy, mcae_adpt_smr, mcae_adpt_smr_fac, mcae_adpt_smr_max, &
-          mcae_smr_fixed_en_width, mcae_smr_index, mcae_num_elec
+          mcae_smr_fixed_en_width, mcae_smr_index, mcae_num_elec, mcae_no_smr
   use w90_io, only            : io_error,stdout,io_stopwatch,io_file_unit,seedname
   use w90_comms
   use w90_io, only            : io_date
@@ -87,6 +87,7 @@ contains
         write(stdout, '(1x,a30,f10.6)') 'Fermi energy: ', fermi_energy
 
         write(stdout, '(1x,a30,l2)') 'Adaptive smearing: ', mcae_adpt_smr
+        write(stdout, '(1x,a30,l2)') 'No smearing: ', mcae_no_smr
         write(stdout, '(1x,a30,f10.6)') 'Adaptive_smr_fac: ', mcae_adpt_smr_fac
         write(stdout, '(1x,a30,f10.6)') 'Adaptive_smr_max: ', mcae_adpt_smr_max
         write(stdout, '(1x,a30,i4)') 'smr_index: ', mcae_smr_index
@@ -478,6 +479,7 @@ contains
     function get_occ(ikpt)
     ! get occupancy for an array of eigenvalues
       use w90_utility, only        : utility_wgauss
+      use w90_postw90_common, only : pw90common_get_occ
 
       implicit none
 
@@ -485,16 +487,20 @@ contains
       real(kind=dp) :: arg, eta_smr
       integer       :: ikpt, i
 
-      do i=1,num_wann
-        if(mcae_adpt_smr) then
-          ! Eq.(35) YWVS07
-          eta_smr=min(locallevelspacing(i,ikpt)*mcae_adpt_smr_fac,mcae_adpt_smr_max)
-        else
-          eta_smr=mcae_smr_fixed_en_width
-        endif
-        arg = (ef - localeig(i,ikpt))/eta_smr
-        get_occ(i)=utility_wgauss(arg,mcae_smr_index)
-      end do
+      if (mcae_no_smr) then
+        call pw90common_get_occ(localeig(:,ikpt),get_occ,ef)
+      else
+        do i=1,num_wann
+          if (mcae_adpt_smr) then
+            ! Eq.(35) YWVS07
+            eta_smr=min(locallevelspacing(i,ikpt)*mcae_adpt_smr_fac,mcae_adpt_smr_max)
+          else
+            eta_smr=mcae_smr_fixed_en_width
+          endif
+          arg = (ef - localeig(i,ikpt))/eta_smr
+          get_occ(i)=utility_wgauss(arg,mcae_smr_index)
+        end do
+      end if
 
       return
 
@@ -578,6 +584,7 @@ contains
       !
       ! function which compute the smearing
       use w90_utility, only        : utility_wgauss
+      use w90_postw90_common, only : pw90common_get_occ
 
       implicit none
 
@@ -596,23 +603,29 @@ contains
       !
       ! local variables
       !
-      real(DP) ::sum1, eta_smr
-      integer :: ik, ibnd
+      real(DP) :: sum1, eta_smr
+      integer  :: ik, ibnd
+      real(dp) :: occ(nbnd)
       ! counter on k points
       ! counter on the band energy
       !
       sum_num_states = 0.d0
       do ik = 1, nks
         sum1 = 0.d0
-        do ibnd = 1, nbnd
-          if(mcae_adpt_smr) then
-            ! Eq.(35) YWVS07
-            eta_smr=min(locallevelspacing(ibnd,ik)*mcae_adpt_smr_fac,mcae_adpt_smr_max)
-          else
-            eta_smr=degauss
-          endif
-          sum1 = sum1 + utility_wgauss( (e-eig(ibnd, ik) ) / eta_smr, ngauss)
-        enddo
+        if (mcae_no_smr) then
+          call pw90common_get_occ(eig(:,ik), occ, e)
+          sum1 = sum(occ)
+        else
+          do ibnd = 1, nbnd
+            if(mcae_adpt_smr) then
+              ! Eq.(35) YWVS07
+              eta_smr=min(locallevelspacing(ibnd,ik)*mcae_adpt_smr_fac,mcae_adpt_smr_max)
+            else
+              eta_smr=degauss
+            endif
+            sum1 = sum1 + utility_wgauss( (e-eig(ibnd, ik) ) / eta_smr, ngauss)
+          enddo
+        end if
         sum_num_states = sum_num_states + kweight * sum1
       enddo
 
