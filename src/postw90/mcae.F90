@@ -326,14 +326,14 @@ contains
     end if
 
     ! then get fermi_energy
-    ef = get_ef(localeig, num_wann, counts(my_node_id), mcae_num_elec, mcae_smr_fixed_en_width, mcae_smr_index)
+    ef = get_ef(localeig, num_wann, counts(my_node_id), mcae_num_elec, kweight, mcae_smr_fixed_en_width, mcae_smr_index)
     if (on_root) then
       write(stdout, '(a)') 'get_ef done'
     end if
 
     ! finally get the eband
     do i=1, counts(my_node_id)
-       localsum(i) = sum_k(i)
+       localsum(i) = sum_k(i, kweight)
     end do
 
     close(102+my_node_id)
@@ -440,11 +440,12 @@ contains
 
     end subroutine interp_eig
 
-    function sum_k(ikpt)
+    function sum_k(ikpt, kweight)
     ! compute band energy on the kpoint ikpt
       implicit none
 
       integer, intent(in)                             :: ikpt
+      real(kind=dp), intent(in)                       :: kweight
       real(kind=dp), dimension(3)                     :: kpt
       real(kind=dp)                                   :: sum_k
       real(kind=dp), dimension(:), allocatable        :: occ
@@ -455,7 +456,7 @@ contains
       allocate(occ(num_wann),stat=ierr)
       if (ierr/=0) call io_error('Error allocating occ in mcae_interp::sum_k.')
 
-      write(*, '(a, i4, a, 3(f10.7,1x))') 'on node ', my_node_id, ', kpt ', kpt
+      write(*, '(a, i4, a, 4(f10.7,1x))') 'on node ', my_node_id, ', kpt ', kpt,kweight
 
       ! get occupancies
       occ = get_occ(ikpt)
@@ -506,7 +507,7 @@ contains
 
     end function get_occ
 
-    function get_ef(eig, nbnd, nks, nelec, degauss, ngauss)
+    function get_ef(eig, nbnd, nks, nelec, kweight, degauss, ngauss)
       !--------------------------------------------------------------------
       !
       !     Finds the Fermi energy - Gaussian Broadening
@@ -516,7 +517,7 @@ contains
       implicit none
       !  I/O variables
       integer, intent(in) :: nks, nbnd, ngauss
-      real(dp), intent(in) :: eig(nbnd, nks), degauss, nelec
+      real(dp), intent(in) :: eig(nbnd, nks), degauss, nelec, kweight
       real(dp) :: get_ef
       !
       real(DP), parameter :: eps = 1.0d-10
@@ -543,8 +544,9 @@ contains
       !
       !      Bisection method
       !
-      sumkup = sum_num_states(eig, nbnd, nks, degauss, ngauss, Eup)
-      sumklw = sum_num_states(eig, nbnd, nks, degauss, ngauss, Elw)
+      sumkup = sum_num_states(eig, nbnd, nks, kweight, degauss, ngauss, Eup)
+      sumklw = sum_num_states(eig, nbnd, nks, kweight, degauss, ngauss, Elw)
+      write(*,*) 'sumkup ',sumkup,'sumklw ',sumklw
 
       if (on_root) then
         if ( (sumkup - nelec) < -eps .or. (sumklw - nelec) > eps )  &
@@ -553,7 +555,7 @@ contains
 
       do i = 1, maxiter
         Ef = (Eup + Elw) / 2.d0
-        sumkmid = sum_num_states(eig, nbnd, nks, degauss, ngauss, Ef)
+        sumkmid = sum_num_states(eig, nbnd, nks, kweight, degauss, ngauss, Ef)
         if (abs (sumkmid-nelec) < eps) then
           get_ef = Ef
           return
@@ -576,7 +578,7 @@ contains
 
     end function get_ef
 
-    function sum_num_states(eig, nbnd, nks, degauss, ngauss, e)
+    function sum_num_states(eig, nbnd, nks, kweight, degauss, ngauss, e)
       !-----------------------------------------------------------------------
       !
       !     This function computes the number of states under a given energy e
@@ -595,7 +597,7 @@ contains
       ! input: the total number of K points
       ! input: the number of bands
       ! input: the type of smearing
-      real(DP), intent(in) :: eig(nbnd, nks), degauss, e
+      real(DP), intent(in) :: kweight, eig(nbnd, nks), degauss, e
       ! input: the weight of the k points
       ! input: the energy eigenvalues
       ! input: gaussian broadening
@@ -609,6 +611,7 @@ contains
       ! counter on k points
       ! counter on the band energy
       !
+      write(*,*) kweight
       sum_num_states = 0.d0
       do ik = 1, nks
         sum1 = 0.d0
