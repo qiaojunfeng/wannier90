@@ -25,26 +25,27 @@ module w90_mcae
   !! Beihang University (China)
   !! Feb, 2018
 
-  use w90_constants
+  use w90_constants, only     : dp
   use w90_parameters, only    : num_wann, recip_lattice, real_lattice, &
           timing_level, mcae_kmesh, mcae_adpt_kmesh, mcae_adpt_kmesh_thresh, &
           fermi_energy, mcae_adpt_smr, mcae_adpt_smr_fac, mcae_adpt_smr_max, &
-          mcae_smr_fixed_en_width, mcae_smr_index, mcae_num_elec, mcae_no_smr
+          mcae_smr_fixed_en_width, mcae_smr_index, mcae_num_elec
   use w90_io, only            : io_error,stdout,io_stopwatch,io_file_unit,seedname
   use w90_comms
   use w90_io, only            : io_date
 
   implicit none
 
-  private 
   public                                          :: mcae_main
 
+  private
   integer                                         :: num_kpts
   real(kind=dp), dimension(:), allocatable        :: globalsum
   real(kind=dp), dimension(:,:), allocatable      :: kpoints, localkpoints
   real(kind=dp)                                   :: ef
   character(len=50)                               :: file_name
   integer                                         :: file_unit
+  logical                                         :: mcae_no_smr
 
 contains
     
@@ -59,6 +60,15 @@ contains
 
     ! write header
     if (on_root .and. (timing_level>0)) call io_stopwatch('mcae_main',1)
+
+    if (on_root) then
+        if (mcae_adpt_smr==.false. .and. mcae_smr_fixed_en_width==0.0_dp) then
+            mcae_no_smr = .true.
+        else
+            mcae_no_smr = .false.
+        end if
+    end if
+    call comms_bcast(mcae_no_smr,1)
 
     if (on_root) then
        write(stdout,*) 

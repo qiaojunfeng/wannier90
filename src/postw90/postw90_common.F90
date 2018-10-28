@@ -348,7 +348,6 @@ module w90_postw90_common
     call comms_bcast(mcae_kmesh(1),3)
     call comms_bcast(mcae_adpt_kmesh,1)
     call comms_bcast(mcae_adpt_kmesh_thresh,1)
-    call comms_bcast(mcae_no_smr,1)
     call comms_bcast(mcae_adpt_smr,1)
     call comms_bcast(mcae_adpt_smr_fac,1)
     call comms_bcast(mcae_adpt_smr_max,1)

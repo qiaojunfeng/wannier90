@@ -257,7 +257,6 @@ module w90_parameters
   integer,           public, save :: mcae_adpt_kmesh
   real(kind=dp),     public, save :: mcae_adpt_kmesh_thresh
   logical,           public, save :: mcae_adpt_smr
-  logical,           public, save :: mcae_no_smr
   real(kind=dp),     public, save :: mcae_adpt_smr_fac
   real(kind=dp),     public, save :: mcae_adpt_smr_max
   integer,           public, save :: mcae_smr_index
@@ -1611,9 +1610,6 @@ contains
     mcae_adpt_kmesh_thresh           = 100.0_dp
     call param_get_keyword('mcae_adpt_kmesh_thresh',found,&
             r_value=mcae_adpt_kmesh_thresh)
-
-    mcae_no_smr = .true.
-    call param_get_keyword('mcae_no_smr',found,l_value=mcae_no_smr)
 
     mcae_adpt_smr = adpt_smr
     call param_get_keyword('mcae_adpt_smr',found,l_value=mcae_adpt_smr)
@@ -5855,7 +5851,6 @@ contains
     call comms_bcast(mcae_kmesh(1),3)
     call comms_bcast(mcae_adpt_kmesh,1)
     call comms_bcast(mcae_adpt_kmesh_thresh,1)
-    call comms_bcast(mcae_no_smr,1)
     call comms_bcast(mcae_adpt_smr,1)
     call comms_bcast(mcae_adpt_smr_fac,1)
     call comms_bcast(mcae_adpt_smr_max,1)
