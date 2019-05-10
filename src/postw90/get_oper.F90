@@ -1121,12 +1121,27 @@ contains
     complex(kind=dp), allocatable :: spn_o(:, :, :, :), spn_temp(:, :)
     complex(kind=dp), allocatable :: H_o(:, :, :)
     complex(kind=dp), allocatable :: SH_o(:, :, :, :)
-    complex(kind=dp)              :: SM_o(num_bands, num_bands, 3)
-    complex(kind=dp)              :: SHM_o(num_bands, num_bands, 3)
+    complex(kind=dp), allocatable :: SM_o(:, :, :)
+    complex(kind=dp), allocatable :: SHM_o(:, :, :)
 
-    complex(kind=dp)              :: SS_q(num_wann, num_wann, 3)
-    complex(kind=dp)              :: SM_q(num_wann, num_wann, 3)
-    complex(kind=dp)              :: SHM_q(num_wann, num_wann, 3)
+    complex(kind=dp), allocatable :: SS_q(:, :, :, :)
+    complex(kind=dp), allocatable :: SM_q(:, :, :)
+    complex(kind=dp), allocatable :: SHM_q(:, :, :)
+
+    ! steps: (use monospaced font to display this chart in correct alignment)
+    ! spn_o --\
+    !         |
+    ! H_o   -----> SH_o --------------------> SH_q  ------------------> SH_R
+    !
+    ! spn_o --------------------------------> SS_q  --\
+    !         |                                       |
+    ! S_o   -----> SM_o --------------------> SM_q  -----> SR_q  -----> SR_R
+    !
+    ! spn_o --\
+    !         |
+    ! H_o   -----> SH_o --------------------> SH_q  --\
+    !                     |                           |
+    ! S_o   -------------------> SHM_o -----> SHM_q -----> SHR_q -----> SHR_R
 
     real(kind=dp)                 :: s_real, s_img
     integer                       :: spn_in, counter, ierr, s, is
@@ -1242,6 +1257,18 @@ contains
         if (ierr /= 0) call io_error('Error in deallocating spm_temp in get_SHC_R')
       endif
 
+      allocate (SS_q(num_wann, num_wann, num_kpts, 3))
+      SS_q = cmplx_0
+      ! QZYZ18 Eq.(50)
+      do ik = 1, num_kpts
+        do is = 1, 3
+          call get_gauge_overlap_matrix( &
+            ik, num_states(ik), &
+            ik, num_states(ik), &
+            spn_o(:, :, ik, is), SS_q(:, :, ik, is))
+        end do
+      end do
+
       close (spn_in)
 
     endif !on_root
@@ -1268,6 +1295,23 @@ contains
           end do
         end if
       enddo
+
+      ! QZYZ18 Eq.(48)
+      allocate (SH_o(num_bands, num_bands, num_kpts, 3))
+      allocate (SH_q(num_wann, num_wann, num_kpts, 3))
+      SH_o = cmplx_0
+      SH_q = cmplx_0
+      do ik = 1, num_kpts
+        do is = 1, 3
+          SH_o(:, :, ik, is) = matmul(spn_o(:, :, ik, is), H_o(:, :, ik))
+          call get_gauge_overlap_matrix( &
+            ik, num_states(ik), &
+            ik, num_states(ik), &
+            SH_o(:, :, ik, is), SH_q(:, :, ik, is))
+        end do
+      end do
+      deallocate (H_o)
+
     endif !on_root
     ! end copying from get_HH_R, Junfeng Qiao
 
@@ -1275,11 +1319,6 @@ contains
     ! read mmn file
     !
     if (on_root) then
-
-      allocate (SR_q(num_wann, num_wann, num_kpts, 3, 3))
-      allocate (SHR_q(num_wann, num_wann, num_kpts, 3, 3))
-      allocate (SH_q(num_wann, num_wann, num_kpts, 3))
-      allocate (S_o(num_bands, num_bands))
 
       mmn_in = io_file_unit()
       open (unit=mmn_in, file=trim(seedname)//'.mmn', &
@@ -1300,23 +1339,19 @@ contains
         call io_error &
         (trim(seedname)//'.mmn has wrong number of nearest neighbours')
 
+      allocate (S_o(num_bands, num_bands))
+      allocate (SM_o(num_bands, num_bands, 3))
+      allocate (SHM_o(num_bands, num_bands, 3))
+
+      allocate (SM_q(num_wann, num_wann, 3))
+      allocate (SHM_q(num_wann, num_wann, 3))
+
+      allocate (SR_q(num_wann, num_wann, num_kpts, 3, 3))
+      allocate (SHR_q(num_wann, num_wann, num_kpts, 3, 3))
+
       SR_q = cmplx_0
       SHR_q = cmplx_0
-      SH_q = cmplx_0
       ik_prev = 0
-
-      ! QZYZ18 Eq.(48)
-      allocate (SH_o(num_bands, num_bands, num_kpts, 3))
-      SH_o = cmplx_0
-      do ik = 1, num_kpts
-        do is = 1, 3
-          SH_o(:, :, ik, is) = matmul(spn_o(:, :, ik, is), H_o(:, :, ik))
-          call get_gauge_overlap_matrix( &
-            ik, num_states(ik), &
-            ik, num_states(ik), &
-            SH_o(:, :, ik, is), SH_q(:, :, ik, is))
-        end do
-      end do
 
       ! Composite loop over k-points ik (outer loop) and neighbors ik2 (inner)
       do ncount = 1, num_kpts*nntot
@@ -1365,7 +1400,6 @@ contains
 
         SM_o = cmplx_0
         SHM_o = cmplx_0
-        SS_q = cmplx_0
         SM_q = cmplx_0
         SHM_q = cmplx_0
         do is = 1, 3
@@ -1376,11 +1410,6 @@ contains
 
           ! Transform to projected subspace, Wannier gauge
           !
-          ! QZYZ18 Eq.(50)
-          call get_gauge_overlap_matrix( &
-            ik, num_states(ik), &
-            ik, num_states(ik), &
-            spn_o(:, :, ik, is), SS_q(:, :, is))
           ! QZYZ18 Eq.(50)
           call get_gauge_overlap_matrix( &
             ik, num_states(ik), &
@@ -1397,7 +1426,7 @@ contains
           do idir = 1, 3
             ! QZYZ18 Eq.(50)
             SR_q(:, :, ik, is, idir) = SR_q(:, :, ik, is, idir) &
-                                       + wb(nn)*bk(idir, nn, ik)*(SM_q(:, :, is) - SS_q(:, :, is))
+                                       + wb(nn)*bk(idir, nn, ik)*(SM_q(:, :, is) - SS_q(:, :, ik, is))
             ! QZYZ18 Eq.(51)
             SHR_q(:, :, ik, is, idir) = SHR_q(:, :, ik, is, idir) &
                                         + wb(nn)*bk(idir, nn, ik)*(SHM_q(:, :, is) - SH_q(:, :, ik, is))
@@ -1408,6 +1437,15 @@ contains
       enddo !ncount
 
       close (mmn_in)
+
+      deallocate (spn_o)
+      deallocate (S_o)
+      deallocate (SH_o)
+      deallocate (SM_o)
+      deallocate (SHM_o)
+      deallocate (SS_q)
+      deallocate (SM_q)
+      deallocate (SHM_q)
 
       do is = 1, 3
         ! QZYZ18 Eq.(46)
@@ -1421,6 +1459,10 @@ contains
       end do
       SR_R = cmplx_i*SR_R
       SHR_R = cmplx_i*SHR_R
+
+      deallocate (SH_q)
+      deallocate (SR_q)
+      deallocate (SHR_q)
 
     endif !on_root
 
