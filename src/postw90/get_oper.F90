@@ -46,14 +46,14 @@ module w90_get_oper
   complex(kind=dp), allocatable, save :: SS_R(:, :, :, :) ! <0n|sigma_x,y,z|Rm>
   !! $$\langle 0n | \sigma_{x,y,z} | Rm \rangle$$
 
-  complex(kind=dp), allocatable, save :: SR_R(:, :, :, :, :) ! <0n|sigma_x,y,z.(r-R)_alpha|Rm>
-  !! $$\langle 0n | \sigma_{x,y,z}.(\hat{r}-R)_{\alpha}  | Rm \rangle$$
+  complex(kind=dp), allocatable, save :: SR_R(:, :, :) ! <0n|sigma_gamma.(r-R)_alpha|Rm>
+  !! $$\langle 0n | \sigma_{\gamma}.(\hat{r}-R)_{\alpha}  | Rm \rangle$$
 
-  complex(kind=dp), allocatable, save :: SHR_R(:, :, :, :, :) ! <0n|sigma_x,y,z.H.(r-R)_alpha|Rm>
-  !! $$\langle 0n | \sigma_{x,y,z}.H.(\hat{r}-R)_{\alpha}  | Rm \rangle$$
+  complex(kind=dp), allocatable, save :: SHR_R(:, :, :) ! <0n|sigma_gamma.H.(r-R)_alpha|Rm>
+  !! $$\langle 0n | \sigma_{\gamma}.H.(\hat{r}-R)_{\alpha}  | Rm \rangle$$
 
-  complex(kind=dp), allocatable, save :: SH_R(:, :, :, :) ! <0n|sigma_x,y,z.H|Rm>
-  !! $$\langle 0n | \sigma_{x,y,z}.H  | Rm \rangle$$
+  complex(kind=dp), allocatable, save :: SH_R(:, :, :) ! <0n|sigma_gamma.H|Rm>
+  !! $$\langle 0n | \sigma_{\gamma}.H  | Rm \rangle$$
 
 contains
 
@@ -1096,9 +1096,9 @@ contains
     !==================================================
     !
     !! Compute several matrices for spin Hall conductivity
-    !! SR_R  = <0n|sigma_{x,y,z}.(r-R)_alpha|Rm>
-    !! SHR_R = <0n|sigma_{x,y,z}.H.(r-R)_alpha|Rm>
-    !! SH_R  = <0n|sigma_{x,y,z}.H|Rm>
+    !! SR_R  = <0n|sigma_{gamma}.(r-R)_alpha|Rm>
+    !! SHR_R = <0n|sigma_{gamma}.H.(r-R)_alpha|Rm>
+    !! SH_R  = <0n|sigma_{gamma}.H|Rm>
     !
     !==================================================
 
@@ -1107,26 +1107,27 @@ contains
       num_bands, ndimwin, nnlist, have_disentangled, &
       transl_inv, nncell, spn_formatted, eigval, &
       scissors_shift, num_valence_bands, &
-      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift
+      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift, &
+      shc_alpha, shc_gamma
     use w90_postw90_common, only: nrpts
     use w90_io, only: stdout, io_file_unit, io_error, io_stopwatch, &
       seedname
     use w90_comms, only: on_root, comms_bcast
 
-    complex(kind=dp), allocatable :: SR_q(:, :, :, :, :)
-    complex(kind=dp), allocatable :: SHR_q(:, :, :, :, :)
-    complex(kind=dp), allocatable :: SH_q(:, :, :, :)
+    complex(kind=dp), allocatable :: SR_q(:, :, :)
+    complex(kind=dp), allocatable :: SHR_q(:, :, :)
+    complex(kind=dp), allocatable :: SH_q(:, :, :)
 
     complex(kind=dp), allocatable :: S_o(:, :)
-    complex(kind=dp), allocatable :: spn_o(:, :, :, :), spn_temp(:, :)
+    complex(kind=dp), allocatable :: spn_o(:, :, :), spn_temp(:, :)
     complex(kind=dp), allocatable :: H_o(:, :, :)
-    complex(kind=dp), allocatable :: SH_o(:, :, :, :)
-    complex(kind=dp), allocatable :: SM_o(:, :, :)
-    complex(kind=dp), allocatable :: SHM_o(:, :, :)
+    complex(kind=dp), allocatable :: SH_o(:, :, :)
+    complex(kind=dp), allocatable :: SM_o(:, :)
+    complex(kind=dp), allocatable :: SHM_o(:, :)
 
-    complex(kind=dp), allocatable :: SS_q(:, :, :, :)
-    complex(kind=dp), allocatable :: SM_q(:, :, :)
-    complex(kind=dp), allocatable :: SHM_q(:, :, :)
+    complex(kind=dp), allocatable :: SS_q(:, :, :)
+    complex(kind=dp), allocatable :: SM_q(:, :)
+    complex(kind=dp), allocatable :: SHM_q(:, :)
 
     ! steps: (use monospaced font to display this chart in correct alignment)
     ! spn_o --\
@@ -1148,7 +1149,7 @@ contains
 
     integer                       :: n, m, i, j, &
                                      ik, ik2, ik_prev, nn, inn, nnl, nnm, nnn, &
-                                     idir, ncount, nn_count, mmn_in, &
+                                     ncount, nn_count, mmn_in, &
                                      nb_tmp, nkp_tmp, nntot_tmp, file_unit, &
                                      ir, io, ivdum(3), ivdum_old(3)
     integer, allocatable          :: num_states(:)
@@ -1160,19 +1161,19 @@ contains
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_SHC_R', 1)
 
     if (.not. allocated(SR_R)) then
-      allocate (SR_R(num_wann, num_wann, nrpts, 3, 3))
+      allocate (SR_R(num_wann, num_wann, nrpts))
     else
       if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_SHC_R', 2)
       return
     end if
     if (.not. allocated(SHR_R)) then
-      allocate (SHR_R(num_wann, num_wann, nrpts, 3, 3))
+      allocate (SHR_R(num_wann, num_wann, nrpts))
     else
       if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_SHC_R', 2)
       return
     end if
     if (.not. allocated(SH_R)) then
-      allocate (SH_R(num_wann, num_wann, nrpts, 3))
+      allocate (SH_R(num_wann, num_wann, nrpts))
     else
       if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_SHC_R', 2)
       return
@@ -1182,7 +1183,7 @@ contains
     ! read spn file
     if (on_root) then
 
-      allocate (spn_o(num_bands, num_bands, num_kpts, 3))
+      allocate (spn_o(num_bands, num_bands, num_kpts))
 
       allocate (num_states(num_kpts))
       do ik = 1, num_kpts
@@ -1222,16 +1223,14 @@ contains
         do ik = 1, num_kpts
           do m = 1, num_bands
             do n = 1, m
-              read (spn_in, *, err=110, end=110) s_real, s_img
-              spn_o(n, m, ik, 1) = cmplx(s_real, s_img, dp)
-              read (spn_in, *, err=110, end=110) s_real, s_img
-              spn_o(n, m, ik, 2) = cmplx(s_real, s_img, dp)
-              read (spn_in, *, err=110, end=110) s_real, s_img
-              spn_o(n, m, ik, 3) = cmplx(s_real, s_img, dp)
-              ! Read upper-triangular part, now build the rest
-              spn_o(m, n, ik, 1) = conjg(spn_o(n, m, ik, 1))
-              spn_o(m, n, ik, 2) = conjg(spn_o(n, m, ik, 2))
-              spn_o(m, n, ik, 3) = conjg(spn_o(n, m, ik, 3))
+              do is = 1, 3
+                read (spn_in, *, err=110, end=110) s_real, s_img
+                if (is == shc_gamma) then
+                  spn_o(n, m, ik) = cmplx(s_real, s_img, dp)
+                  ! Read upper-triangular part, now build the rest
+                  spn_o(m, n, ik) = conjg(spn_o(n, m, ik))
+                end if
+              end do
             end do
           end do
         enddo
@@ -1244,12 +1243,8 @@ contains
           do m = 1, num_bands
             do n = 1, m
               counter = counter + 1
-              spn_o(n, m, ik, 1) = spn_temp(1, counter)
-              spn_o(m, n, ik, 1) = conjg(spn_temp(1, counter))
-              spn_o(n, m, ik, 2) = spn_temp(2, counter)
-              spn_o(m, n, ik, 2) = conjg(spn_temp(2, counter))
-              spn_o(n, m, ik, 3) = spn_temp(3, counter)
-              spn_o(m, n, ik, 3) = conjg(spn_temp(3, counter))
+              spn_o(n, m, ik) = spn_temp(shc_gamma, counter)
+              spn_o(m, n, ik) = conjg(spn_temp(shc_gamma, counter))
             end do
           end do
         end do
@@ -1257,16 +1252,14 @@ contains
         if (ierr /= 0) call io_error('Error in deallocating spm_temp in get_SHC_R')
       endif
 
-      allocate (SS_q(num_wann, num_wann, num_kpts, 3))
+      allocate (SS_q(num_wann, num_wann, num_kpts))
       SS_q = cmplx_0
       ! QZYZ18 Eq.(50)
       do ik = 1, num_kpts
-        do is = 1, 3
-          call get_gauge_overlap_matrix( &
-            ik, num_states(ik), &
-            ik, num_states(ik), &
-            spn_o(:, :, ik, is), SS_q(:, :, ik, is))
-        end do
+        call get_gauge_overlap_matrix( &
+          ik, num_states(ik), &
+          ik, num_states(ik), &
+          spn_o(:, :, ik), SS_q(:, :, ik))
       end do
 
       close (spn_in)
@@ -1297,18 +1290,16 @@ contains
       enddo
 
       ! QZYZ18 Eq.(48)
-      allocate (SH_o(num_bands, num_bands, num_kpts, 3))
-      allocate (SH_q(num_wann, num_wann, num_kpts, 3))
+      allocate (SH_o(num_bands, num_bands, num_kpts))
+      allocate (SH_q(num_wann, num_wann, num_kpts))
       SH_o = cmplx_0
       SH_q = cmplx_0
       do ik = 1, num_kpts
-        do is = 1, 3
-          SH_o(:, :, ik, is) = matmul(spn_o(:, :, ik, is), H_o(:, :, ik))
-          call get_gauge_overlap_matrix( &
-            ik, num_states(ik), &
-            ik, num_states(ik), &
-            SH_o(:, :, ik, is), SH_q(:, :, ik, is))
-        end do
+        SH_o(:, :, ik) = matmul(spn_o(:, :, ik), H_o(:, :, ik))
+        call get_gauge_overlap_matrix( &
+          ik, num_states(ik), &
+          ik, num_states(ik), &
+          SH_o(:, :, ik), SH_q(:, :, ik))
       end do
       deallocate (H_o)
 
@@ -1340,14 +1331,14 @@ contains
         (trim(seedname)//'.mmn has wrong number of nearest neighbours')
 
       allocate (S_o(num_bands, num_bands))
-      allocate (SM_o(num_bands, num_bands, 3))
-      allocate (SHM_o(num_bands, num_bands, 3))
+      allocate (SM_o(num_bands, num_bands))
+      allocate (SHM_o(num_bands, num_bands))
 
-      allocate (SM_q(num_wann, num_wann, 3))
-      allocate (SHM_q(num_wann, num_wann, 3))
+      allocate (SM_q(num_wann, num_wann))
+      allocate (SHM_q(num_wann, num_wann))
 
-      allocate (SR_q(num_wann, num_wann, num_kpts, 3, 3))
-      allocate (SHR_q(num_wann, num_wann, num_kpts, 3, 3))
+      allocate (SR_q(num_wann, num_wann, num_kpts))
+      allocate (SHR_q(num_wann, num_wann, num_kpts))
 
       SR_q = cmplx_0
       SHR_q = cmplx_0
@@ -1402,36 +1393,32 @@ contains
         SHM_o = cmplx_0
         SM_q = cmplx_0
         SHM_q = cmplx_0
-        do is = 1, 3
-          ! QZYZ18 Eq.(50)
-          SM_o(:, :, is) = matmul(spn_o(:, :, ik, is), S_o(:, :))
-          ! QZYZ18 Eq.(51)
-          SHM_o(:, :, is) = matmul(SH_o(:, :, ik, is), S_o(:, :))
+        ! QZYZ18 Eq.(50)
+        SM_o(:, :) = matmul(spn_o(:, :, ik), S_o(:, :))
+        ! QZYZ18 Eq.(51)
+        SHM_o(:, :) = matmul(SH_o(:, :, ik), S_o(:, :))
 
-          ! Transform to projected subspace, Wannier gauge
-          !
-          ! QZYZ18 Eq.(50)
-          call get_gauge_overlap_matrix( &
-            ik, num_states(ik), &
-            nnlist(ik, nn), num_states(nnlist(ik, nn)), &
-            SM_o(:, :, is), SM_q(:, :, is))
-          ! QZYZ18 Eq.(51)
-          call get_gauge_overlap_matrix( &
-            ik, num_states(ik), &
-            nnlist(ik, nn), num_states(nnlist(ik, nn)), &
-            SHM_o(:, :, is), SHM_q(:, :, is))
+        ! Transform to projected subspace, Wannier gauge
+        !
+        ! QZYZ18 Eq.(50)
+        call get_gauge_overlap_matrix( &
+          ik, num_states(ik), &
+          nnlist(ik, nn), num_states(nnlist(ik, nn)), &
+          SM_o(:, :), SM_q(:, :))
+        ! QZYZ18 Eq.(51)
+        call get_gauge_overlap_matrix( &
+          ik, num_states(ik), &
+          nnlist(ik, nn), num_states(nnlist(ik, nn)), &
+          SHM_o(:, :), SHM_q(:, :))
 
-          ! Assuming all neighbors of a given point are read in sequence!
-          !
-          do idir = 1, 3
-            ! QZYZ18 Eq.(50)
-            SR_q(:, :, ik, is, idir) = SR_q(:, :, ik, is, idir) &
-                                       + wb(nn)*bk(idir, nn, ik)*(SM_q(:, :, is) - SS_q(:, :, ik, is))
-            ! QZYZ18 Eq.(51)
-            SHR_q(:, :, ik, is, idir) = SHR_q(:, :, ik, is, idir) &
-                                        + wb(nn)*bk(idir, nn, ik)*(SHM_q(:, :, is) - SH_q(:, :, ik, is))
-          end do
-        end do
+        ! Assuming all neighbors of a given point are read in sequence!
+        !
+        ! QZYZ18 Eq.(50)
+        SR_q(:, :, ik) = SR_q(:, :, ik) &
+                         + wb(nn)*bk(shc_alpha, nn, ik)*(SM_q(:, :) - SS_q(:, :, ik))
+        ! QZYZ18 Eq.(51)
+        SHR_q(:, :, ik) = SHR_q(:, :, ik) &
+                          + wb(nn)*bk(shc_alpha, nn, ik)*(SHM_q(:, :) - SH_q(:, :, ik))
 
         ik_prev = ik
       enddo !ncount
@@ -1447,16 +1434,12 @@ contains
       deallocate (SM_q)
       deallocate (SHM_q)
 
-      do is = 1, 3
-        ! QZYZ18 Eq.(46)
-        call fourier_q_to_R(SH_q(:, :, :, is), SH_R(:, :, :, is))
-        do idir = 1, 3
-          ! QZYZ18 Eq.(44)
-          call fourier_q_to_R(SR_q(:, :, :, is, idir), SR_R(:, :, :, is, idir))
-          ! QZYZ18 Eq.(45)
-          call fourier_q_to_R(SHR_q(:, :, :, is, idir), SHR_R(:, :, :, is, idir))
-        end do
-      end do
+      ! QZYZ18 Eq.(46)
+      call fourier_q_to_R(SH_q(:, :, :), SH_R(:, :, :))
+      ! QZYZ18 Eq.(44)
+      call fourier_q_to_R(SR_q(:, :, :), SR_R(:, :, :))
+      ! QZYZ18 Eq.(45)
+      call fourier_q_to_R(SHR_q(:, :, :), SHR_R(:, :, :))
       SR_R = cmplx_i*SR_R
       SHR_R = cmplx_i*SHR_R
 
@@ -1466,9 +1449,9 @@ contains
 
     endif !on_root
 
-    call comms_bcast(SH_R(1, 1, 1, 1), num_wann*num_wann*nrpts*3)
-    call comms_bcast(SR_R(1, 1, 1, 1, 1), num_wann*num_wann*nrpts*3*3)
-    call comms_bcast(SHR_R(1, 1, 1, 1, 1), num_wann*num_wann*nrpts*3*3)
+    call comms_bcast(SH_R(1, 1, 1), num_wann*num_wann*nrpts)
+    call comms_bcast(SR_R(1, 1, 1), num_wann*num_wann*nrpts)
+    call comms_bcast(SHR_R(1, 1, 1), num_wann*num_wann*nrpts)
 
     ! end copying from get_AA_R, Junfeng Qiao
 
