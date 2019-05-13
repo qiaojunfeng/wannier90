@@ -1113,6 +1113,7 @@ contains
     use w90_io, only: stdout, io_file_unit, io_error, io_stopwatch, &
       seedname
     use w90_comms, only: on_root, comms_bcast
+    use w90_utility, only: utility_zgemm_new
 
     complex(kind=dp), allocatable :: SR_q(:, :, :)
     complex(kind=dp), allocatable :: SHR_q(:, :, :)
@@ -1295,7 +1296,7 @@ contains
       SH_o = cmplx_0
       SH_q = cmplx_0
       do ik = 1, num_kpts
-        SH_o(:, :, ik) = matmul(spn_o(:, :, ik), H_o(:, :, ik))
+        call utility_zgemm_new(spn_o(:, :, ik), H_o(:, :, ik), SH_o(:, :, ik))
         call get_gauge_overlap_matrix( &
           ik, num_states(ik), &
           ik, num_states(ik), &
@@ -1394,9 +1395,9 @@ contains
         SM_q = cmplx_0
         SHM_q = cmplx_0
         ! QZYZ18 Eq.(50)
-        SM_o(:, :) = matmul(spn_o(:, :, ik), S_o(:, :))
+        call utility_zgemm_new(spn_o(:, :, ik), S_o(:, :), SM_o(:, :))
         ! QZYZ18 Eq.(51)
-        SHM_o(:, :) = matmul(SH_o(:, :, ik), S_o(:, :))
+        call utility_zgemm_new(SH_o(:, :, ik), S_o(:, :), SHM_o(:, :))
 
         ! Transform to projected subspace, Wannier gauge
         !

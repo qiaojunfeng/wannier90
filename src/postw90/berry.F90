@@ -1754,7 +1754,7 @@ contains
     !====================================================================!
 
     use w90_constants, only: dp, cmplx_0, cmplx_i
-    use w90_utility, only: utility_rotate
+    use w90_utility, only: utility_rotate_new
     use w90_parameters, only: num_wann, kubo_eigval_max, kubo_nfreq, &
       kubo_freq_list, kubo_adpt_smr, kubo_smr_fixed_en_width, &
       kubo_adpt_smr_max, kubo_adpt_smr_fac, berry_kmesh, &
@@ -1827,7 +1827,7 @@ contains
 
     call pw90common_fourier_R_to_k_vec(kpt, AA_R, OO_true=AA)
     do i = 1, 3
-      AA(:, :, i) = utility_rotate(AA(:, :, i), UU, num_wann)
+      call utility_rotate_new(AA(:, :, i), UU, num_wann)
     enddo
     AA = AA + cmplx_i*D_h ! Eq.(25) WYSV06
 
@@ -1921,7 +1921,7 @@ contains
       !====================================================================!
 
       use w90_constants, only: dp, cmplx_0, cmplx_i
-      use w90_utility, only: utility_rotate
+      use w90_utility, only: utility_rotate_new, utility_zgemm_new
       use w90_parameters, only: num_wann, shc_gamma
       use w90_postw90_common, only: pw90common_fourier_R_to_k_new
       use w90_get_oper, only: SS_R, SR_R, SHR_R, SH_R
@@ -1935,59 +1935,62 @@ contains
       complex(kind=dp), dimension(:, :), intent(out) :: js_k
 
       ! internal vars
-      complex(kind=dp)    :: B_k(num_wann, num_wann)
-      complex(kind=dp)    :: K_k(num_wann, num_wann)
-      complex(kind=dp)    :: L_k(num_wann, num_wann)
-      complex(kind=dp)    :: S_w(num_wann, num_wann)
-      complex(kind=dp)    :: S_k(num_wann, num_wann)
-      complex(kind=dp)    :: SR_w(num_wann, num_wann)
-      complex(kind=dp)    :: SR_alpha_k(num_wann, num_wann)
-      complex(kind=dp)    :: SHR_w(num_wann, num_wann)
-      complex(kind=dp)    :: SHR_alpha_k(num_wann, num_wann)
-      complex(kind=dp)    :: SH_w(num_wann, num_wann)
-      complex(kind=dp)    :: SH_k(num_wann, num_wann)
+      complex(kind=dp)    :: S(num_wann, num_wann)
+      complex(kind=dp)    :: K(num_wann, num_wann)
+      complex(kind=dp)    :: L(num_wann, num_wann)
+      complex(kind=dp)    :: SR(num_wann, num_wann)
+      complex(kind=dp)    :: SHR(num_wann, num_wann)
+      complex(kind=dp)    :: SH(num_wann, num_wann)
+      complex(kind=dp)    :: B(num_wann, num_wann)
       complex(kind=dp)    :: eig_mat(num_wann, num_wann)
       complex(kind=dp)    :: del_eig_mat(num_wann, num_wann)
 
-      !===========
-      js_k = cmplx_0
-
-      !=========== S_k ===========
+      !=========== S ===========
       ! < u_k | sigma_gamma | u_k >, QZYZ18 Eq.(25)
       ! QZYZ18 Eq.(36)
-      call pw90common_fourier_R_to_k_new(kpt, SS_R(:, :, :, shc_gamma), OO=S_w)
+      call pw90common_fourier_R_to_k_new(kpt, SS_R(:, :, :, shc_gamma), OO=S)
       ! QZYZ18 Eq.(30)
-      S_k = utility_rotate(S_w, UU, num_wann)
+      call utility_rotate_new(S, UU, num_wann)
 
-      !=========== K_k ===========
+      !=========== K ===========
       ! < u_k | sigma_gamma | \partial_alpha u_k >, QZYZ18 Eq.(26)
       ! QZYZ18 Eq.(37)
-      call pw90common_fourier_R_to_k_new(kpt, SR_R, OO=SR_w)
+      call pw90common_fourier_R_to_k_new(kpt, SR_R, OO=SR)
       ! QZYZ18 Eq.(31)
-      SR_alpha_k = -cmplx_i*utility_rotate(SR_w, UU, num_wann)
-      K_k = SR_alpha_k + matmul(S_k, D_alpha_h)
+      call utility_rotate_new(SR, UU, num_wann)
+      ! B as a tmp matrix
+      call utility_zgemm_new(S, D_alpha_h, B)
+      K = -cmplx_i*SR + B
 
-      !=========== L_k ===========
+      !=========== L ===========
       ! < u_k | sigma_gamma.H | \partial_alpha u_k >, QZYZ18 Eq.(27)
       ! QZYZ18 Eq.(38)
-      call pw90common_fourier_R_to_k_new(kpt, SHR_R, OO=SHR_w)
+      call pw90common_fourier_R_to_k_new(kpt, SHR_R, OO=SHR)
       ! QZYZ18 Eq.(32)
-      SHR_alpha_k = -cmplx_i*utility_rotate(SHR_w, UU, num_wann)
+      call utility_rotate_new(SHR, UU, num_wann)
       ! QZYZ18 Eq.(39)
-      call pw90common_fourier_R_to_k_new(kpt, SH_R, OO=SH_w)
+      call pw90common_fourier_R_to_k_new(kpt, SH_R, OO=SH)
       ! QZYZ18 Eq.(32)
-      SH_k = utility_rotate(SH_w, UU, num_wann)
-      L_k = SHR_alpha_k + matmul(SH_k, D_alpha_h)
+      call utility_rotate_new(SH, UU, num_wann)
+      ! B as a tmp matrix
+      call utility_zgemm_new(SH, D_alpha_h, B)
+      L = -cmplx_i*SHR + B
 
-      !=========== B_k ===========
+      !=========== B ===========
       ! < \psi_nk | sigma_gamma v_alpha | \psi_mk >, QZYZ18 Eq.(24)
-      B_k = cmplx_0
+      eig_mat = cmplx_0
+      del_eig_mat = cmplx_0
       do i = 1, num_wann
-        eig_mat(i, :) = eig(:)
-        del_eig_mat(i, :) = del_alpha_eig(:)
+        eig_mat(i, i) = eig(i)
+        del_eig_mat(i, i) = del_alpha_eig(i)
       end do
       ! note * is not matmul
-      B_k = del_eig_mat*S_k + eig_mat*K_k - L_k
+      ! B as a tmp matrix
+      call utility_zgemm_new(S, del_eig_mat, B)
+      S = B
+      call utility_zgemm_new(K, eig_mat, B)
+      K = B
+      B = S + K - L
 
       !=========== js_k ===========
       ! QZYZ18 Eq.(23)
@@ -1995,7 +1998,7 @@ contains
       ! to get spin current, we need to multiply it by hbar/2,
       ! also we need to divide it by hbar to recover the velocity
       ! operator, these are done outside of this subroutine
-      js_k = 1.0_dp/2.0_dp*(B_k + conjg(transpose(B_k)))
+      js_k = 1.0_dp/2.0_dp*(B + conjg(transpose(B)))
 
     end subroutine berry_get_js_k
 
