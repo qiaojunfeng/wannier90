@@ -2062,7 +2062,7 @@ contains
 
     if (on_root) then
 #ifdef OPENMP
-!$OMP       critical (berry_print_progress)
+!$OMP       critical (berry_print_progress_critical)
 #endif
       if (PRESENT(init) .and. init) then
         ! The length of the array start:step:end
@@ -2101,7 +2101,7 @@ contains
         end if ! sum_k
       end if ! init
 #ifdef OPENMP
-!$OMP       end critical (berry_print_progress)
+!$OMP       end critical (berry_print_progress_critical)
 #endif
     end if ! on_root
 
