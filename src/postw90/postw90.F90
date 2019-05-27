@@ -56,7 +56,7 @@ program postw90
   ispostw90 = .true.
 
   if (on_root) then
-    time0 = io_time()
+    time0 = io_wallclocktime()
     prog = 'postw90'
     call io_commandline(prog, dryrun)
     len_seedname = len(seedname)
@@ -117,7 +117,7 @@ program postw90
   if (on_root) then
     call param_read
     call param_postw90_write
-    time1 = io_time()
+    time1 = io_wallclocktime()
     write (stdout, '(1x,a25,f11.3,a)') &
       'Time to read parameters  ', time1 - time0, ' (sec)'
 
@@ -137,7 +137,7 @@ program postw90
       ! the orbital magnetization
       !
       call kmesh_get
-      time2 = io_time()
+      time2 = io_wallclocktime()
       write (stdout, '(1x,a25,f11.3,a)') &
         'Time to get kmesh        ', time2 - time1, ' (sec)'
     endif
@@ -193,7 +193,7 @@ program postw90
   call pw90common_wanint_setup
 
   if (on_root) then
-    time1 = io_time()
+    time1 = io_wallclocktime()
     write (stdout, '(/1x,a25,f11.3,a)') &
       'Time to read and process .chk    ', time1 - time2, ' (sec)'
   endif
@@ -251,7 +251,7 @@ program postw90
   ! -----------------------------------------------------------------
   !
   if (on_root) then
-    time1 = io_time()
+    time1 = io_wallclocktime()
   endif
 
   if (geninterp) call geninterp_main
@@ -261,7 +261,7 @@ program postw90
   if (gyrotropic) call gyrotropic_main
 
   if (on_root .and. boltzwann) then
-    time2 = io_time()
+    time2 = io_wallclocktime()
     write (stdout, '(/1x,a,f11.3,a)') &
       'Time for BoltzWann (Boltzmann transport) ', time2 - time1, ' (sec)'
   endif
@@ -271,7 +271,7 @@ program postw90
   call comms_barrier
   if (on_root) then
     write (stdout, '(/,1x,a25,f11.3,a)') &
-      'Total Execution Time     ', io_time(), ' (sec)'
+      'Total Execution Time     ', io_wallclocktime(), ' (sec)'
     if (timing_level > 0) call io_print_timings()
     write (stdout, *)
     write (stdout, '(/,1x,a)') 'All done: postw90 exiting'
