@@ -103,9 +103,11 @@ contains
       shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift
     use w90_get_oper, only: get_HH_R, get_AA_R, get_BB_R, get_CC_R, &
       get_SS_R, get_SHC_R
+#ifdef DEBUG
     ! for debugging OpenMP
-    !use omp_lib
-    !use w90_io, only: io_time, io_wallclocktime
+    use omp_lib
+    use w90_io, only: io_time, io_wallclocktime
+#endif
 
     implicit none
 
@@ -500,9 +502,13 @@ contains
         call berry_print_progress(.true., my_node_id, PRODUCT(berry_kmesh) - 1, num_nodes)
       end if
 
-      !if (on_root) then
-      !  write (*, *) 'before omp loop, cpu time', io_time(), 'wall time', io_wallclocktime()
-      !end if
+#ifdef DEBUG
+      if (on_root) then
+        write (*, '(a,f9.5,a,f9.5)') 'before omp loop, cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
+      end if
+#endif
+
+      ! Be sure variables in reduction list are initialized before entering the loop
 #ifdef OPENMP
 !$OMP       parallel do &
 !$OMP      &            private(loop_xyz, loop_x, loop_y, loop_z, kpt, loop_adpt, &
@@ -626,15 +632,23 @@ contains
         end if
         !
         ! ***END CODE BLOCK 1***
-        !write (*, *) 'node =', my_node_id, 'thread', omp_get_thread_num(), 'loop_xyz', loop_xyz, &
-        !    'cpu time', io_time(), 'wall time', io_wallclocktime()
+
+#ifdef DEBUG
+        write (*, '(a,i4,a,i4,a,i8,a,f9.5,a,f9.5)') &
+          'node ', my_node_id, ' thread ', omp_get_thread_num(), ' loop_xyz ', loop_xyz, &
+          ' cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
+#endif
+
       end do !loop_xyz
 #ifdef OPENMP
 !$OMP       end parallel do
 #endif
-      !if (on_root) then
-      !  write (*, *) 'after omp loop, cpu time', io_time(), 'wall time', io_wallclocktime()
-      !end if
+
+#ifdef DEBUG
+      if (on_root) then
+        write (*, '(a,f9.5,a,f9.5)') 'after omp loop, cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
+      end if
+#endif
 
     end if !wanint_kpoint_file
 
