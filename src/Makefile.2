@@ -168,10 +168,10 @@ gyrotropic.o: $(POSTDIR)gyrotropic.F90 comms.o parameters.o constants.o utility.
 	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)gyrotropic.F90
 
 wan_ham.o: $(POSTDIR)wan_ham.F90 parameters.o constants.o utility.o postw90_common.o get_oper.o
-	$(COMPILER) $(POSTOPTS) $(POSTFCOPTS) -c $(POSTDIR)wan_ham.F90
+	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)wan_ham.F90
 
 postw90_common.o: $(POSTDIR)postw90_common.F90 ws_distance.o comms.o parameters.o utility.o constants.o io.o 
-	$(COMPILER) $(POSTOPTS) $(POSTFCOPTS) -c $(POSTDIR)postw90_common.F90
+	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)postw90_common.F90
 
 wannier_lib.o: ./constants.o ./io.o ./utility.o ./parameters.o \
 	./hamiltonian.o ./kmesh.o ./overlap.o ./disentangle.o \
