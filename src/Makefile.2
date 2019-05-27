@@ -15,7 +15,7 @@ else
 COMMS = serial
 endif
 
-ifeq ($(COMMS),mpi)
+ifeq ($(findstring mpi,$(COMMS)),mpi)
 TEMP1 = -DMPI
 TEMP2 = $(MPIF90)
 else
@@ -23,28 +23,11 @@ TEMP1 =
 TEMP2 = $(F90)
 endif
 
-ifdef POSTCOMMS
-POSTCOMMS := $(strip $(POSTCOMMS))
-else ifdef COMMS
-POSTCOMMS := $(strip $(COMMS))
-else
-POSTCOMMS = serial
+ifeq ($(findstring openmp,$(COMMS)),openmp)
+TEMP1 += -DOPENMP
 endif
 
-TEMP3 =
-ifeq ($(findstring mpi,$(POSTCOMMS)),mpi)
-TEMP3 += -DMPI
-endif
-
-ifeq ($(findstring openmp,$(POSTCOMMS)),openmp)
-TEMP3 += -DOPENMP
-endif
-
-ifndef POSTFCOPTS
-POSTFCOPTS = $(FCOPTS)
-endif
-
-wannier libs dynlibs w90chk2chk serialobjs: POSTOPTS = $(TEMP1) 
+wannier libs dynlibs w90chk2chk serialobjs: POSTOPTS = $(TEMP1)
 wannier libs dynlibs w90chk2chk serialobjs: COMPILER = $(TEMP2)
 wannier: ../../wannier90.x 
 w90chk2chk: ../../w90chk2chk.x
@@ -57,12 +40,12 @@ serialobjs: $(OBJS)
 ../../wannier90.x: $(OBJS) ../wannier_prog.F90
 	$(COMPILER) ../wannier_prog.F90 $(POSTOPTS) $(LDOPTS) $(OBJS) $(LIBS) -o ../../wannier90.x
 
-post: POSTOPTS = $(TEMP3)
+post: POSTOPTS = $(TEMP1)
 post: COMPILER = $(TEMP2)
 post: mpi_test ../../postw90.x
 
 ../../postw90.x: $(OBJS_POST) $(POSTDIR)postw90.F90
-	$(COMPILER) $(POSTDIR)postw90.F90 $(POSTOPTS) $(POSTFCOPTS) $(LDOPTS) $(OBJS_POST) $(LIBS) -o ../../postw90.x
+	$(COMPILER) $(POSTDIR)postw90.F90 $(POSTOPTS) $(FCOPTS) $(LDOPTS) $(OBJS_POST) $(LIBS) -o ../../postw90.x
 
 mpi_test :
 ifeq ($(COMMS),mpi)
@@ -162,7 +145,7 @@ kslice.o: $(POSTDIR)kslice.F90 comms.o parameters.o constants.o io.o spin.o berr
 	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)kslice.F90
 
 berry.o: $(POSTDIR)berry.F90 comms.o parameters.o constants.o utility.o postw90_common.o get_oper.o io.o spin.o wan_ham.o
-	$(COMPILER) $(POSTOPTS) $(POSTFCOPTS) -c $(POSTDIR)berry.F90
+	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)berry.F90
 
 gyrotropic.o: $(POSTDIR)gyrotropic.F90 comms.o parameters.o constants.o utility.o postw90_common.o get_oper.o io.o spin.o wan_ham.o berry.o
 	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)gyrotropic.F90

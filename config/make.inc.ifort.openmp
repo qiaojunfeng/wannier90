@@ -3,14 +3,13 @@
 # For Linux with intel version 11/12 on 64bit machines
 #=====================================================
 F90 = ifort
-COMMS=mpi
+COMMS=mpi openmp
 MPIF90=mpiifort
-FCOPTS=-O2 
-LDOPTS=-O2 
 
-#using OpenMP for postw90.x
-POSTCOMMS  = mpi openmp
-POSTFCOPTS = -O2 -openmp
+# If compiling with OpenMP, add corresponding compiler flag,
+# for ifort this is -qopenmp, or -openmp if using an older version.
+FCOPTS=-O2 -qopenmp
+LDOPTS=-O2
 
 #========================================================
 # Intel mkl libraries. Set LIBPATH if not in default path
