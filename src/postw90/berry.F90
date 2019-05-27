@@ -103,6 +103,8 @@ contains
       shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift
     use w90_get_oper, only: get_HH_R, get_AA_R, get_BB_R, get_CC_R, &
       get_SS_R, get_SHC_R
+    use omp_lib
+    use w90_io, only: io_time
 
     real(kind=dp), allocatable    :: adkpt(:, :)
 
@@ -248,8 +250,12 @@ contains
       if (shc_freq_scan) then
         allocate (shc_freq(kubo_nfreq))
         allocate (shc_k_freq(kubo_nfreq))
-        shc_freq = 0.0_dp
-        shc_k_freq = 0.0_dp
+        shc_freq = cmplx_0
+        shc_k_freq = cmplx_0
+        ! explicitly allocate to conform to OPENMP reduction clause restrictions
+        allocate (shc_fermi(1))
+        allocate (shc_k_fermi(1))
+        allocate (shc_k_fermi_dummy(1))
       else
         allocate (shc_fermi(nfermi))
         allocate (shc_k_fermi(nfermi))
@@ -259,6 +265,9 @@ contains
         !only used for fermiscan & adpt kmesh
         shc_k_fermi_dummy = 0.0_dp
         adpt_counter_list = 0
+        ! explicitly allocate to conform to OPENMP reduction clause restrictions
+        allocate (shc_freq(1))
+        allocate (shc_k_freq(1))
       endif
     endif
 
@@ -359,6 +368,10 @@ contains
         'Reading interpolation grid from file kpoint.dat: ', &
         sum(num_int_kpts_on_node), ' points'
 
+      if (eval_shc) then
+        call berry_print_progress(.true., 1, num_int_kpts_on_node(my_node_id), 1)
+      end if
+
       ! Loop over k-points on the irreducible wedge of the Brillouin
       ! zone, read from file 'kpoint.dat'
       !
@@ -422,16 +435,13 @@ contains
           sc_list = sc_list + sc_k_list*kweight
         end if
 
-        !
-        ! ***END COPY OF CODE BLOCK 1***
-
         if (eval_shc) then
           ! print calculation progress, from 0%, 10%, ... to 100%
           ! Note the 1st call to berry_get_shc_klist will be much longer
           ! than later calls due to the time spent on
           !   berry_get_shc_klist -> wham_get_eig_deleig ->
           !   pw90common_fourier_R_to_k -> ws_translate_dist
-          call berry_print_progress(loop_xyz, 1, num_int_kpts_on_node(my_node_id), 1)
+          call berry_print_progress()
           if (.not. shc_freq_scan) then
             call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
             !check whether needs to tigger adpt kmesh or not.
@@ -473,6 +483,8 @@ contains
             shc_freq = shc_freq + kweight*shc_k_freq
           end if
         end if
+        !
+        ! ***END COPY OF CODE BLOCK 1***
 
       end do !loop_xyz
 
@@ -481,6 +493,21 @@ contains
       kweight = db1*db2*db3
       kweight_adpt = kweight/berry_curv_adpt_kmesh**3
 
+      if (eval_shc) then
+        call berry_print_progress(.true., my_node_id, PRODUCT(berry_kmesh) - 1, num_nodes)
+      end if
+
+      if (on_root) then
+        write (*, *) 'before omp loop, io_time', io_time()
+      end if
+#ifdef OPENMP
+!$OMP       parallel do &
+!$OMP      &            private(loop_xyz, loop_x, loop_y, loop_z, kpt, loop_adpt, &
+!$OMP      &                    if, vdum, rdum, &
+!$OMP      &                    shc_k_fermi, shc_k_fermi_dummy, shc_k_freq, ladpt_kmesh) &
+!$OMP      &        reduction(+:adpt_counter_list, &
+!$OMP      &                    shc_fermi, shc_freq)
+#endif
       do loop_xyz = my_node_id, PRODUCT(berry_kmesh) - 1, num_nodes
         loop_x = loop_xyz/(berry_kmesh(2)*berry_kmesh(3))
         loop_y = (loop_xyz - loop_x*(berry_kmesh(2) &
@@ -546,16 +573,13 @@ contains
           sc_list = sc_list + sc_k_list*kweight
         end if
 
-        !
-        ! ***END CODE BLOCK 1***
-
         if (eval_shc) then
           ! print calculation progress, from 0%, 10%, ... to 100%
           ! Note the 1st call to berry_get_shc_klist will be much longer
           ! than later calls due to the time spent on
           !   berry_get_shc_klist -> wham_get_eig_deleig ->
           !   pw90common_fourier_R_to_k -> ws_translate_dist
-          call berry_print_progress(loop_xyz, my_node_id, PRODUCT(berry_kmesh) - 1, num_nodes)
+          call berry_print_progress()
           if (.not. shc_freq_scan) then
             call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
             !check whether needs to tigger adpt kmesh or not.
@@ -597,8 +621,18 @@ contains
             shc_freq = shc_freq + kweight*shc_k_freq
           end if
         end if
-
+        !
+        ! ***END CODE BLOCK 1***
+        !write(*,*) 'loop_xyz =', loop_xyz, 'node =', my_node_id, &
+        !           'thread =', omp_get_thread_num()
+        write (*, *) '  thread', omp_get_thread_num(), 'loop_xyz', loop_xyz, 'io_time', io_time()
       end do !loop_xyz
+#ifdef OPENMP
+!$OMP       end parallel do
+#endif
+      if (on_root) then
+        write (*, *) 'after omp loop, io_time', io_time()
+      end if
 
     end if !wanint_kpoint_file
 
@@ -1764,8 +1798,8 @@ contains
       pw90common_fourier_R_to_k_vec, pw90common_kmesh_spacing
     use w90_wan_ham, only: wham_get_D_h, wham_get_eig_deleig
     use w90_get_oper, only: AA_R
-    !use w90_comms, only: my_node_id
-    !!!
+
+    implicit none
 
     ! args
     real(kind=dp), intent(in)  :: kpt(3)
@@ -1865,8 +1899,8 @@ contains
         prod = js_k(n, m)*cmplx_i*rfac*AA(m, n, shc_beta)
         if (kubo_adpt_smr) then
           ! Eq.(35) YWVS07
-          vdum(:) = del_eig(m, :) - del_eig(n, :)
-          joint_level_spacing = sqrt(dot_product(vdum(:), vdum(:)))*Delta_k
+          vdum = del_eig(m, :) - del_eig(n, :)
+          joint_level_spacing = sqrt(dot_product(vdum, vdum))*Delta_k
           eta_smr = min(joint_level_spacing*kubo_adpt_smr_fac, &
                         kubo_adpt_smr_max)
         else
@@ -1895,11 +1929,6 @@ contains
       end if
     enddo
 
-    !if (lfermi) then
-    !  write (*, '(3(f9.6,1x),f16.8,1x,1E16.8)') &
-    !    kpt(1), kpt(2), kpt(3), fermi_energy_list(1), shc_k_fermi(1)
-    !end if
-
     return
 
   contains
@@ -1925,6 +1954,8 @@ contains
       use w90_parameters, only: num_wann, shc_gamma
       use w90_postw90_common, only: pw90common_fourier_R_to_k_new
       use w90_get_oper, only: SS_R, SR_R, SHR_R, SH_R
+
+      implicit none
 
       ! args
       real(kind=dp), intent(in)  :: kpt(3)
@@ -1984,7 +2015,6 @@ contains
         eig_mat(i, i) = eig(i)
         del_eig_mat(i, i) = del_alpha_eig(i)
       end do
-      ! note * is not matmul
       ! B as a tmp matrix
       call utility_zgemm_new(S, del_eig_mat, B)
       S = B
@@ -2004,59 +2034,73 @@ contains
 
   end subroutine berry_get_shc_klist
 
-  subroutine berry_print_progress(loop_k, start_k, end_k, step_k)
+  subroutine berry_print_progress(init, start_k, end_k, step_k)
     !============================================================!
-    ! print k-points calculation progress, seperated into 11 points,
+    ! Print k-points calculation progress, seperated into 11 points,
     ! from 0%, 10%, ... to 100%
     ! start_k, end_k are inclusive
-    ! loop_k should in the array start_k to end_k with step step_k
+    ! First call with init = .true. before entering the loop,
+    ! then call once at each iteration.
+    ! Should be called exactly ((end_k - start_k)/step_k + 1) times.
     !============================================================!
     use w90_comms, only: on_root
     use w90_io, only: stdout, io_wallclocktime
 
-    integer, intent(in) :: loop_k, start_k, end_k, step_k
+    implicit none
+
+    logical, intent(in), optional :: init
+    integer, intent(in), optional :: start_k, end_k, step_k
 
     real(kind=dp) :: cur_time, finished
+
+    integer, save :: sum_k
+    integer, save :: tot_k
+    integer, save :: percentage
     real(kind=dp), save :: prev_time
-    integer :: i, j, n, last_k
-    logical, dimension(9) :: kmesh_processed = (/(.false., i=1, 9)/)
 
     if (on_root) then
-      ! The last loop_k in the array start:step:end
-      ! e.g. 4 of 0:4:7 = [0, 4], 11 of 3:4:11 = [3, 7, 11]
-      last_k = (CEILING((end_k - start_k + 1)/real(step_k)) - 1)*step_k + start_k
-
-      if (loop_k == start_k) then
-        write (stdout, '(1x,a)') ''
-        write (stdout, '(1x,a)') 'Calculation started'
-        write (stdout, '(1x,a)') '-------------------------------'
-        write (stdout, '(1x,a)') '  k-points       wall      diff'
-        write (stdout, '(1x,a)') ' calculated      time      time'
-        write (stdout, '(1x,a)') ' ----------      ----      ----'
-        cur_time = io_wallclocktime()
-        prev_time = cur_time
-        write (stdout, '(5x,a,3x,f10.1,f10.1)') '  0%', cur_time, cur_time - prev_time
-      else if (loop_k == last_k) then
-        cur_time = io_wallclocktime()
-        write (stdout, '(5x,a,3x,f10.1,f10.1)') '100%', cur_time, cur_time - prev_time
-        write (stdout, '(1x,a)') ''
+#ifdef OPENMP
+!$OMP       critical (berry_print_progress)
+#endif
+      if (PRESENT(init) .and. init) then
+        ! The length of the array start:step:end
+        ! e.g. 2 for 0:4:7 = [0, 4], 3 for 3:4:11 = [3, 7, 11]
+        tot_k = (end_k - start_k)/step_k + 1
+        sum_k = 0
+        percentage = 0
       else
-        finished = 10.0_dp*real(loop_k - start_k + 1)/real(end_k - start_k + 1)
-        do n = 1, size(kmesh_processed)
-          if ((.not. kmesh_processed(n)) .and. (finished >= n)) then
-            do i = n, size(kmesh_processed)
-              if (i <= finished) then
-                j = i
-                kmesh_processed(i) = .true.
-              end if
-            end do
+        sum_k = sum_k + 1
+
+        if (sum_k == 1) then
+          write (stdout, '(1x,a)') ''
+          write (stdout, '(1x,a)') 'Calculation started'
+          write (stdout, '(1x,a)') '-------------------------------'
+          write (stdout, '(1x,a)') '  k-points       wall      diff'
+          write (stdout, '(1x,a)') ' calculated      time      time'
+          write (stdout, '(1x,a)') ' ----------      ----      ----'
+          cur_time = io_wallclocktime()
+          prev_time = cur_time
+          write (stdout, '(5x,a,3x,f10.1,f10.1)') &
+            '  0%', cur_time, cur_time - prev_time
+        else if (sum_k == tot_k) then
+          cur_time = io_wallclocktime()
+          write (stdout, '(5x,a,3x,f10.1,f10.1)') &
+            '100%', cur_time, cur_time - prev_time
+          write (stdout, '(1x,a)') ''
+        else
+          finished = 10.0_dp*real(sum_k)/real(tot_k)
+          if (finished >= (percentage + 1)) then
+            percentage = ceiling(finished)
             cur_time = io_wallclocktime()
-            write (stdout, '(5x,i2,a,3x,f10.1,f10.1)') j, '0%', cur_time, cur_time - prev_time
+            write (stdout, '(5x,i2,a,3x,f10.1,f10.1)') &
+              percentage, '0%', cur_time, cur_time - prev_time
             prev_time = cur_time
-            exit
           end if
-        end do
-      end if
+        end if ! sum_k
+      end if ! init
+#ifdef OPENMP
+!$OMP       end critical (berry_print_progress)
+#endif
     end if ! on_root
 
   end subroutine berry_print_progress

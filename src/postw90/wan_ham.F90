@@ -385,8 +385,13 @@ contains
     !! Given a k point, this function returns eigenvalues E and
     !! derivatives of the eigenvalues dE/dk_a, using wham_get_deleig_a
     !
+    !! Note about OpenMP:
+    !! w90_get_oper:get_HH_R is not thread-safe, so make sure
+    !! that w90_get_oper:get_HH_R has been called already once
+    !! in initialization step.
+    !
     use w90_parameters, only: num_wann
-    use w90_get_oper, only: HH_R, get_HH_R
+    use w90_get_oper, only: HH_R!, get_HH_R
     use w90_postw90_common, only: pw90common_fourier_R_to_k
     use w90_utility, only: utility_diagonalize
 
@@ -407,7 +412,7 @@ contains
     ! I call it to be sure that it has been called already once,
     ! and that HH_R contains the actual matrix.
     ! Further calls should return very fast.
-    call get_HH_R
+    !call get_HH_R
 
     call pw90common_fourier_R_to_k(kpt, HH_R, HH, 0)
     call utility_diagonalize(HH, num_wann, eig, UU)
@@ -428,7 +433,7 @@ contains
     !! derivatives of the eigenvalues dE/dk_a, using wham_get_deleig_a
     !
     use w90_parameters, only: num_wann
-    use w90_get_oper, only: HH_R, get_HH_R
+    !use w90_get_oper, only: HH_R, get_HH_R
     use w90_postw90_common, only: pw90common_fourier_R_to_k
     use w90_utility, only: utility_diagonalize
 
@@ -455,7 +460,7 @@ contains
     !========================================================!
 
     use w90_parameters, only: num_wann
-    use w90_get_oper, only: HH_R, get_HH_R
+    use w90_get_oper, only: HH_R!, get_HH_R
     use w90_postw90_common, only: pw90common_fourier_R_to_k_new
     use w90_utility, only: utility_diagonalize
 
@@ -470,7 +475,7 @@ contains
     integer                       :: i
     complex(kind=dp), allocatable :: delHH(:, :, :)
 
-    call get_HH_R
+    !call get_HH_R
 
     allocate (delHH(num_wann, num_wann, 3))
     call pw90common_fourier_R_to_k_new(kpt, HH_R, OO=HH, &
@@ -497,7 +502,7 @@ contains
     !========================================================!
 
     use w90_parameters, only: num_wann
-    use w90_get_oper, only: HH_R, get_HH_R, AA_R, get_AA_R
+    use w90_get_oper, only: HH_R, AA_R!, get_AA_R, get_HH_R
     use w90_postw90_common, only: pw90common_fourier_R_to_k_new_second_d, &
       pw90common_fourier_R_to_k_new_second_d_TB_conv
     use w90_utility, only: utility_diagonalize
@@ -511,8 +516,8 @@ contains
 
     integer                       :: i
 
-    call get_HH_R
-    call get_AA_R
+    !call get_HH_R
+    !call get_AA_R
 
     call pw90common_fourier_R_to_k_new_second_d_TB_conv(kpt, HH_R, AA_R, OO=HH, &
                                                         OO_da=HH_da(:, :, :), &
@@ -529,7 +534,7 @@ contains
     !========================================================!
 
     use w90_parameters, only: num_wann
-    use w90_get_oper, only: HH_R, get_HH_R
+    use w90_get_oper, only: HH_R!, get_HH_R
     use w90_postw90_common, only: pw90common_fourier_R_to_k_new_second_d
     use w90_utility, only: utility_diagonalize
 
@@ -542,7 +547,7 @@ contains
 
     integer                       :: i
 
-    call get_HH_R
+    !call get_HH_R
 
     call pw90common_fourier_R_to_k_new_second_d(kpt, HH_R, OO=HH, &
                                                 OO_da=HH_da(:, :, :), &

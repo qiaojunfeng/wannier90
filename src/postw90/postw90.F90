@@ -35,6 +35,10 @@ program postw90
   use w90_boltzwann
   use w90_geninterp
 
+#ifdef OPENMP
+  use omp_lib
+#endif
+
   implicit none
 
   integer       :: nkp, len_seedname
@@ -86,13 +90,24 @@ program postw90
     call param_write_header
     if (num_nodes == 1) then
 #ifdef MPI
+#ifdef OPENMP
+      write (stdout, '(/,1x,a,i3,a)') &
+        'Running in serial (with parallel executable, OpenMP enabled) using ', &
+        omp_get_max_threads(), ' THREADs'
+#else
       write (stdout, '(/,1x,a)') 'Running in serial (with parallel executable)'
+#endif
 #else
       write (stdout, '(/,1x,a)') 'Running in serial (with serial executable)'
 #endif
     else
+#ifdef OPENMP
+      write (stdout, '(/,1x,a,i3,a,i3,a/)') &
+        'Running in parallel on ', num_nodes, ' NODEs with ', omp_get_max_threads(), 'THREADs per NODE'
+#else
       write (stdout, '(/,1x,a,i3,a/)') &
         'Running in parallel on ', num_nodes, ' CPUs'
+#endif
     endif
   end if
 

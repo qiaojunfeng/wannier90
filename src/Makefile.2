@@ -23,6 +23,26 @@ TEMP1 =
 TEMP2 = $(F90)
 endif
 
+ifdef POSTCOMMS
+POSTCOMMS := $(strip $(POSTCOMMS))
+else ifdef COMMS
+POSTCOMMS := $(strip $(COMMS))
+else
+POSTCOMMS = serial
+endif
+
+TEMP3 =
+ifeq ($(findstring mpi,$(POSTCOMMS)),mpi)
+TEMP3 += -DMPI
+endif
+
+ifeq ($(findstring openmp,$(POSTCOMMS)),openmp)
+TEMP3 += -DOPENMP
+endif
+
+ifndef POSTFCOPTS
+POSTFCOPTS = $(FCOPTS)
+endif
 
 wannier libs dynlibs w90chk2chk serialobjs: POSTOPTS = $(TEMP1) 
 wannier libs dynlibs w90chk2chk serialobjs: COMPILER = $(TEMP2)
@@ -37,12 +57,12 @@ serialobjs: $(OBJS)
 ../../wannier90.x: $(OBJS) ../wannier_prog.F90
 	$(COMPILER) ../wannier_prog.F90 $(POSTOPTS) $(LDOPTS) $(OBJS) $(LIBS) -o ../../wannier90.x
 
-post: POSTOPTS = $(TEMP1)
+post: POSTOPTS = $(TEMP3)
 post: COMPILER = $(TEMP2)
 post: mpi_test ../../postw90.x
 
 ../../postw90.x: $(OBJS_POST) $(POSTDIR)postw90.F90
-	$(COMPILER) $(POSTDIR)postw90.F90 $(POSTOPTS) $(LDOPTS) $(OBJS_POST) $(LIBS) -o ../../postw90.x
+	$(COMPILER) $(POSTDIR)postw90.F90 $(POSTOPTS) $(POSTFCOPTS) $(LDOPTS) $(OBJS_POST) $(LIBS) -o ../../postw90.x
 
 mpi_test :
 ifeq ($(COMMS),mpi)
@@ -142,16 +162,16 @@ kslice.o: $(POSTDIR)kslice.F90 comms.o parameters.o constants.o io.o spin.o berr
 	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)kslice.F90
 
 berry.o: $(POSTDIR)berry.F90 comms.o parameters.o constants.o utility.o postw90_common.o get_oper.o io.o spin.o wan_ham.o
-	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)berry.F90
+	$(COMPILER) $(POSTOPTS) $(POSTFCOPTS) -c $(POSTDIR)berry.F90
 
 gyrotropic.o: $(POSTDIR)gyrotropic.F90 comms.o parameters.o constants.o utility.o postw90_common.o get_oper.o io.o spin.o wan_ham.o berry.o
 	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)gyrotropic.F90
 
 wan_ham.o: $(POSTDIR)wan_ham.F90 parameters.o constants.o utility.o postw90_common.o get_oper.o
-	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)wan_ham.F90
+	$(COMPILER) $(POSTOPTS) $(POSTFCOPTS) -c $(POSTDIR)wan_ham.F90
 
 postw90_common.o: $(POSTDIR)postw90_common.F90 ws_distance.o comms.o parameters.o utility.o constants.o io.o 
-	$(COMPILER) $(POSTOPTS) $(FCOPTS) -c $(POSTDIR)postw90_common.F90
+	$(COMPILER) $(POSTOPTS) $(POSTFCOPTS) -c $(POSTDIR)postw90_common.F90
 
 wannier_lib.o: ./constants.o ./io.o ./utility.o ./parameters.o \
 	./hamiltonian.o ./kmesh.o ./overlap.o ./disentangle.o \

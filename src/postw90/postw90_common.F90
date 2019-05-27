@@ -83,7 +83,9 @@ contains
     use w90_constants, only: dp, cmplx_0
     use w90_io, only: io_error, io_file_unit, stdout, seedname
     use w90_utility, only: utility_cart_to_frac
-    use w90_parameters, only: real_lattice, effective_model, num_wann
+    use w90_parameters, only: real_lattice, effective_model, num_wann, &
+      use_ws_distance
+    use w90_ws_distance, only: ws_translate_dist
 
     integer        :: ierr, i, j, k, ikpt, ir, file_unit, num_wann_loc
 
@@ -139,6 +141,8 @@ contains
         crvec(:, ir) = matmul(transpose(real_lattice), irvec(:, ir))
       end do
     endif
+
+    if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
 
     return
 
@@ -699,7 +703,7 @@ contains
     use w90_constants, only: dp, cmplx_0, cmplx_i, twopi
     use w90_parameters, only: num_kpts, kpt_latt, num_wann, use_ws_distance
     use w90_ws_distance, only: irdist_ws, crdist_ws, &
-      wdist_ndeg, ws_translate_dist
+      wdist_ndeg!, ws_translate_dist
 
     implicit none
 
@@ -714,7 +718,7 @@ contains
     real(kind=dp)    :: rdotk
     complex(kind=dp) :: phase_fac
 
-    if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
+    !if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
 
     OO(:, :) = cmplx_0
     do ir = 1, nrpts
@@ -771,7 +775,7 @@ contains
 
     use w90_constants, only: dp, cmplx_0, cmplx_i, twopi
     use w90_parameters, only: timing_level, num_kpts, kpt_latt, num_wann, use_ws_distance
-    use w90_ws_distance, only: irdist_ws, wdist_ndeg, ws_translate_dist
+    use w90_ws_distance, only: irdist_ws, wdist_ndeg!, ws_translate_dist
 
     implicit none
 
@@ -788,7 +792,7 @@ contains
     real(kind=dp)    :: rdotk
     complex(kind=dp) :: phase_fac
 
-    if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
+    !if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
 
     if (present(OO)) OO = cmplx_0
     if (present(OO_dx)) OO_dx = cmplx_0
@@ -845,7 +849,7 @@ contains
 
     use w90_constants, only: dp, cmplx_0, cmplx_i, twopi
     use w90_parameters, only: timing_level, num_kpts, kpt_latt, num_wann, use_ws_distance
-    use w90_ws_distance, only: irdist_ws, wdist_ndeg, ws_translate_dist
+    use w90_ws_distance, only: irdist_ws, wdist_ndeg!, ws_translate_dist
 
     implicit none
 
@@ -861,7 +865,7 @@ contains
     real(kind=dp)    :: rdotk
     complex(kind=dp) :: phase_fac
 
-    if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
+    !if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
 
     if (present(OO)) OO = cmplx_0
     if (present(OO_da)) OO_da = cmplx_0
@@ -935,7 +939,7 @@ contains
     use w90_constants, only: dp, cmplx_0, cmplx_i, twopi
     use w90_parameters, only: timing_level, num_kpts, kpt_latt, num_wann, &
       use_ws_distance, wannier_centres, recip_lattice
-    use w90_ws_distance, only: irdist_ws, wdist_ndeg, ws_translate_dist
+    use w90_ws_distance, only: irdist_ws, wdist_ndeg!, ws_translate_dist
     use w90_utility, only: utility_cart_to_frac
 
     implicit none
@@ -957,7 +961,7 @@ contains
 
     r_sum = 0.d0
 
-    if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
+    !if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
 
     ! calculate wannier centres in cartesian
     local_wannier_centres(:, :) = 0.d0
@@ -1056,7 +1060,7 @@ contains
 
     use w90_constants, only: dp, cmplx_0, cmplx_i, twopi
     use w90_parameters, only: num_kpts, kpt_latt, num_wann, use_ws_distance
-    use w90_ws_distance, only: irdist_ws, wdist_ndeg, ws_translate_dist
+    use w90_ws_distance, only: irdist_ws, wdist_ndeg!, ws_translate_dist
 
     implicit none
 
@@ -1071,7 +1075,8 @@ contains
     real(kind=dp)    :: rdotk
     complex(kind=dp) :: phase_fac
 
-    if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
+    !if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
+
     if (present(OO_true)) OO_true = cmplx_0
     if (present(OO_pseudo)) OO_pseudo = cmplx_0
     do ir = 1, nrpts
@@ -1082,8 +1087,8 @@ contains
           do ideg = 1, wdist_ndeg(j, i, ir)
             rdotk = twopi*dot_product(kpt(:), real(irdist_ws(:, ideg, i, j, ir), dp))
             phase_fac = cmplx(cos(rdotk), sin(rdotk), dp)/real(ndegen(ir)*wdist_ndeg(i, j, ir), dp)
-            rdotk = twopi*dot_product(kpt(:), irvec(:, ir))
-            phase_fac = cmplx(cos(rdotk), sin(rdotk), dp)/real(ndegen(ir), dp)
+            !rdotk = twopi*dot_product(kpt(:), irvec(:, ir))
+            !phase_fac = cmplx(cos(rdotk), sin(rdotk), dp)/real(ndegen(ir), dp)
             if (present(OO_true)) then
               OO_true(i, j, 1) = OO_true(i, j, 1) + phase_fac*OO_R(i, j, ir, 1)
               OO_true(i, j, 2) = OO_true(i, j, 2) + phase_fac*OO_R(i, j, ir, 2)
@@ -1142,7 +1147,7 @@ contains
 
     use w90_constants, only: dp, cmplx_0, cmplx_i, twopi
     use w90_parameters, only: num_kpts, kpt_latt, num_wann, use_ws_distance
-    use w90_ws_distance, only: irdist_ws, wdist_ndeg, ws_translate_dist
+    use w90_ws_distance, only: irdist_ws, wdist_ndeg!, ws_translate_dist
 
     implicit none
 
@@ -1157,7 +1162,7 @@ contains
     real(kind=dp)    :: rdotk
     complex(kind=dp) :: phase_fac
 
-    if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
+    !if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
     if (present(OO_da)) OO_da = cmplx_0
     if (present(OO_dadb)) OO_dadb = cmplx_0
     do ir = 1, nrpts
@@ -1169,8 +1174,8 @@ contains
 
             rdotk = twopi*dot_product(kpt(:), real(irdist_ws(:, ideg, i, j, ir), dp))
             phase_fac = cmplx(cos(rdotk), sin(rdotk), dp)/real(ndegen(ir)*wdist_ndeg(i, j, ir), dp)
-            rdotk = twopi*dot_product(kpt(:), irvec(:, ir))
-            phase_fac = cmplx(cos(rdotk), sin(rdotk), dp)/real(ndegen(ir), dp)
+            !rdotk = twopi*dot_product(kpt(:), irvec(:, ir))
+            !phase_fac = cmplx(cos(rdotk), sin(rdotk), dp)/real(ndegen(ir), dp)
             if (present(OO_da)) then
               OO_da(i, j, 1) = OO_da(i, j, 1) + phase_fac*OO_R(i, j, ir, 1)
               OO_da(i, j, 2) = OO_da(i, j, 2) + phase_fac*OO_R(i, j, ir, 2)
@@ -1227,7 +1232,7 @@ contains
     use w90_constants, only: dp, cmplx_0, cmplx_i, twopi
     use w90_parameters, only: num_kpts, kpt_latt, num_wann, use_ws_distance, &
       wannier_centres, recip_lattice
-    use w90_ws_distance, only: irdist_ws, wdist_ndeg, ws_translate_dist
+    use w90_ws_distance, only: irdist_ws, wdist_ndeg!, ws_translate_dist
     use w90_utility, only: utility_cart_to_frac
 
     implicit none
@@ -1247,7 +1252,7 @@ contains
 
     r_sum = 0.d0
 
-    if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
+    !if (use_ws_distance) CALL ws_translate_dist(nrpts, irvec)
     if (present(OO_da)) OO_da = cmplx_0
     if (present(OO_dadb)) OO_dadb = cmplx_0
 
