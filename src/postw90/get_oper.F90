@@ -1004,7 +1004,7 @@ contains
               status='old', err=109)
         write (stdout, '(/a)', advance='no') &
           ' Reading spin matrices from '//trim(seedname)//'.spn in get_SS_R : '
-        read (spn_in, *, err=110, end=110) header
+        read (spn_in, '(a)', err=110, end=110) header
         write (stdout, '(a)') trim(header)
         read (spn_in, *, err=110, end=110) nb_tmp, nkp_tmp
       else
@@ -1204,7 +1204,7 @@ contains
               status='old', err=109)
         write (stdout, '(/a)', advance='no') &
           ' Reading spin matrices from '//trim(seedname)//'.spn in get_SHC_R : '
-        read (spn_in, *, err=110, end=110) header
+        read (spn_in, '(a)', err=110, end=110) header
         write (stdout, '(a)') trim(header)
         read (spn_in, *, err=110, end=110) nb_tmp, nkp_tmp
       else
