@@ -56,6 +56,10 @@ program postw90
   ispostw90 = .true.
 
   if (on_root) then
+#ifdef DEBUG
+    ! initialize, let io_time & io_wallclocktime have the same starting time.
+    time0 = io_time()
+#endif
     time0 = io_wallclocktime()
     prog = 'postw90'
     call io_commandline(prog, dryrun)

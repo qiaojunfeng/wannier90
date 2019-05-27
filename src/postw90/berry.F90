@@ -158,7 +158,7 @@ contains
                          db1, db2, db3, fac, freq, rdum, vdum(3)
     integer           :: n, i, j, k, jk, ikpt, if, ispn, ierr, loop_x, loop_y, loop_z, &
                          loop_xyz, loop_adpt, adpt_counter_list(nfermi), ifreq, &
-                         file_unit
+                         file_unit, loop_start, loop_stop, loop_step
     character(len=24) :: file_name
     logical           :: eval_ahc, eval_morb, eval_kubo, not_scannable, eval_sc, eval_shc
     logical           :: ladpt_kmesh
@@ -504,9 +504,15 @@ contains
 
 #ifdef DEBUG
       if (on_root) then
-        write (*, '(a,f9.5,a,f9.5)') 'before omp loop, cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
+        write (*, '(a,f9.5,a,f9.5)') 'before OMP loop, cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
       end if
 #endif
+
+      ! for intel ifort compilers, the PRODUCT arithmetic at loop_stop can cause
+      ! wrong scheduling of loop construct, so we calculate it in advance.
+      loop_start = my_node_id
+      loop_stop = PRODUCT(berry_kmesh) - 1
+      loop_step = num_nodes
 
       ! Be sure variables in reduction list are initialized before entering the loop
 #ifdef OPENMP
@@ -517,7 +523,7 @@ contains
 !$OMP      &        reduction(+:adpt_counter_list, &
 !$OMP      &                    shc_fermi, shc_freq)
 #endif
-      do loop_xyz = my_node_id, PRODUCT(berry_kmesh) - 1, num_nodes
+      do loop_xyz = loop_start, loop_stop, loop_step
         loop_x = loop_xyz/(berry_kmesh(2)*berry_kmesh(3))
         loop_y = (loop_xyz - loop_x*(berry_kmesh(2) &
                                      *berry_kmesh(3)))/berry_kmesh(3)
@@ -646,7 +652,7 @@ contains
 
 #ifdef DEBUG
       if (on_root) then
-        write (*, '(a,f9.5,a,f9.5)') 'after omp loop, cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
+        write (*, '(a,f9.5,a,f9.5)') 'after OMP loop, cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
       end if
 #endif
 
