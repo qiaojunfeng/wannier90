@@ -337,6 +337,20 @@ contains
         shc_k_freq = cmplx_0
 #endif
       endif
+#ifdef OPENMP
+    else
+      allocate (shc_freq(1))
+      allocate (shc_k_freq(1))
+      shc_freq = cmplx_0
+      shc_k_freq = cmplx_0
+      allocate (shc_fermi(1))
+      allocate (shc_k_fermi(1))
+      allocate (shc_k_fermi_dummy(1))
+      shc_fermi = 0.0_dp
+      shc_k_fermi = 0.0_dp
+      shc_k_fermi_dummy = 0.0_dp
+      adpt_counter_list = 0
+#endif
     endif
 
     if (on_root) then
