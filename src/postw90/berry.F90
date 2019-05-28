@@ -192,6 +192,14 @@ contains
       call get_AA_R
       imf_list = 0.0_dp
       adpt_counter_list = 0
+#ifdef OPENMP
+    else
+      ! Note for OpenMP:
+      ! If uninitialized, ifort may assign random value.
+      ! Explicitly initializing them to 0 are safer for OpenMP reduction clause.
+      imf_list = 0.0_dp
+      adpt_counter_list = 0
+#endif
     endif
 
     if (eval_morb) then
@@ -202,6 +210,12 @@ contains
       imf_list2 = 0.0_dp
       img_list = 0.0_dp
       imh_list = 0.0_dp
+#ifdef OPENMP
+    else
+      imf_list2 = 0.0_dp
+      img_list = 0.0_dp
+      imh_list = 0.0_dp
+#endif
     endif
 
     ! List here berry_tasks that assume nfermi=1
@@ -234,7 +248,40 @@ contains
         kubo_H_spn = cmplx_0
         kubo_AH_spn = cmplx_0
         jdos_spn = 0.0_dp
+#ifdef OPENMP
+      else
+        allocate (kubo_H_k_spn(1, 1, 1, 1))
+        allocate (kubo_H_spn(1, 1, 1, 1))
+        allocate (kubo_AH_k_spn(1, 1, 1, 1))
+        allocate (kubo_AH_spn(1, 1, 1, 1))
+        allocate (jdos_k_spn(1, 1))
+        allocate (jdos_spn(1, 1))
+        kubo_H_spn = cmplx_0
+        kubo_AH_spn = cmplx_0
+        jdos_spn = 0.0_dp
+#endif
       endif
+#ifdef OPENMP
+    else
+      allocate (kubo_H_k(1, 1, 1))
+      allocate (kubo_H(1, 1, 1))
+      allocate (kubo_AH_k(1, 1, 1))
+      allocate (kubo_AH(1, 1, 1))
+      allocate (jdos_k(1))
+      allocate (jdos(1))
+      kubo_H = cmplx_0
+      kubo_AH = cmplx_0
+      jdos = 0.0_dp
+      allocate (kubo_H_k_spn(1, 1, 1, 1))
+      allocate (kubo_H_spn(1, 1, 1, 1))
+      allocate (kubo_AH_k_spn(1, 1, 1, 1))
+      allocate (kubo_AH_spn(1, 1, 1, 1))
+      allocate (jdos_k_spn(1, 1))
+      allocate (jdos_spn(1, 1))
+      kubo_H_spn = cmplx_0
+      kubo_AH_spn = cmplx_0
+      jdos_spn = 0.0_dp
+#endif
     endif
 
     if (eval_sc) then
@@ -244,6 +291,13 @@ contains
       allocate (sc_list(3, 6, kubo_nfreq))
       sc_k_list = 0.0_dp
       sc_list = 0.0_dp
+#ifdef OPENMP
+    else
+      allocate (sc_k_list(1, 1, 1))
+      allocate (sc_list(1, 1, 1))
+      sc_k_list = 0.0_dp
+      sc_list = 0.0_dp
+#endif
     endif
 
     if (eval_shc) then
@@ -257,10 +311,16 @@ contains
         allocate (shc_k_freq(kubo_nfreq))
         shc_freq = cmplx_0
         shc_k_freq = cmplx_0
-        ! explicitly allocate to conform to OPENMP reduction clause restrictions
+#ifdef OPENMP
+        ! explicitly allocate to conform to OpenMP reduction clause restrictions
         allocate (shc_fermi(1))
         allocate (shc_k_fermi(1))
         allocate (shc_k_fermi_dummy(1))
+        shc_fermi = 0.0_dp
+        shc_k_fermi = 0.0_dp
+        shc_k_fermi_dummy = 0.0_dp
+        adpt_counter_list = 0
+#endif
       else
         allocate (shc_fermi(nfermi))
         allocate (shc_k_fermi(nfermi))
@@ -270,9 +330,12 @@ contains
         !only used for fermiscan & adpt kmesh
         shc_k_fermi_dummy = 0.0_dp
         adpt_counter_list = 0
-        ! explicitly allocate to conform to OPENMP reduction clause restrictions
+#ifdef OPENMP
         allocate (shc_freq(1))
         allocate (shc_k_freq(1))
+        shc_freq = cmplx_0
+        shc_k_freq = cmplx_0
+#endif
       endif
     endif
 
@@ -498,13 +561,10 @@ contains
       kweight = db1*db2*db3
       kweight_adpt = kweight/berry_curv_adpt_kmesh**3
 
-      if (eval_shc) then
-        call berry_print_progress(.true., my_node_id, PRODUCT(berry_kmesh) - 1, num_nodes)
-      end if
-
 #ifdef DEBUG
       if (on_root) then
-        write (*, '(a,f9.5,a,f9.5)') 'before OMP loop, cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
+        write (*, '(a,f9.5,a,f9.5)') 'before OMP loop, cpu_time ', io_time(), &
+          ' wall_time ', io_wallclocktime()
       end if
 #endif
 
@@ -514,14 +574,25 @@ contains
       loop_stop = PRODUCT(berry_kmesh) - 1
       loop_step = num_nodes
 
+      if (eval_shc) then
+        call berry_print_progress(.true., loop_start, loop_stop, loop_step)
+      end if
+
       ! Be sure variables in reduction list are initialized before entering the loop
 #ifdef OPENMP
 !$OMP       parallel do &
-!$OMP      &            private(loop_xyz, loop_x, loop_y, loop_z, kpt, loop_adpt, &
-!$OMP      &                    if, vdum, rdum, &
-!$OMP      &                    shc_k_fermi, shc_k_fermi_dummy, shc_k_freq, ladpt_kmesh) &
-!$OMP      &        reduction(+:adpt_counter_list, &
-!$OMP      &                    shc_fermi, shc_freq)
+!$OMP      &  private(loop_xyz, loop_x, loop_y, loop_z, kpt, loop_adpt, if, vdum, rdum, &
+!$OMP      &          imf_k_list, imf_k_list_dummy, &
+!$OMP      &          img_k_list, imh_k_list, &
+!$OMP      &          kubo_H_k, kubo_AH_k, jdos_k, kubo_H_k_spn, kubo_AH_k_spn, jdos_k_spn, &
+!$OMP      &          sc_k_list, &
+!$OMP      &          shc_k_fermi, shc_k_fermi_dummy, shc_k_freq, ladpt_kmesh) &
+!$OMP      &  reduction(+:adpt_counter_list, &
+!$OMP      &              imf_list, &
+!$OMP      &              imf_list2, img_list, imh_list, &
+!$OMP      &              kubo_H, kubo_AH, jdos, kubo_H_spn, kubo_AH_spn, jdos_spn, &
+!$OMP      &              sc_list, &
+!$OMP      &              shc_fermi, shc_freq)
 #endif
       do loop_xyz = loop_start, loop_stop, loop_step
         loop_x = loop_xyz/(berry_kmesh(2)*berry_kmesh(3))
@@ -652,7 +723,8 @@ contains
 
 #ifdef DEBUG
       if (on_root) then
-        write (*, '(a,f9.5,a,f9.5)') 'after OMP loop, cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
+        write (*, '(a,f9.5,a,f9.5)') 'after OMP loop, cpu_time ', io_time(), &
+          ' wall_time ', io_wallclocktime()
       end if
 #endif
 
