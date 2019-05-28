@@ -95,9 +95,8 @@ program postw90
     if (num_nodes == 1) then
 #ifdef MPI
 #ifdef OPENMP
-      write (stdout, '(/,1x,a,i3,a)') &
-        'Running in serial (with parallel executable, OpenMP enabled) using ', &
-        omp_get_max_threads(), ' THREADs'
+      write (stdout, '(/,1x,a,i4,a/)') &
+        'Running in parallel (OpenMP) on ', omp_get_max_threads(), ' THREADs'
 #else
       write (stdout, '(/,1x,a)') 'Running in serial (with parallel executable)'
 #endif
@@ -106,8 +105,9 @@ program postw90
 #endif
     else
 #ifdef OPENMP
-      write (stdout, '(/,1x,a,i3,a,i3,a/)') &
-        'Running in parallel on ', num_nodes, ' NODEs with ', omp_get_max_threads(), 'THREADs per NODE'
+      write (stdout, '(/,1x,a,i4,a,i4,a/)') &
+        'Running in parallel (MPI+OpenMP) on ', num_nodes, ' NODEs with ', &
+        omp_get_max_threads(), ' THREADs per NODE'
 #else
       write (stdout, '(/,1x,a,i3,a/)') &
         'Running in parallel on ', num_nodes, ' CPUs'
