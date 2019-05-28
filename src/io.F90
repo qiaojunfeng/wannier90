@@ -71,6 +71,7 @@ contains
     !=====================================
     !! Stopwatch to time parts of the code
     !=====================================
+    use w90_constants, only: i64
 
     implicit none
 
@@ -82,7 +83,13 @@ contains
     integer :: i
     real(kind=dp) :: t
 
-    call cpu_time(t)
+    ! This returns CPU time
+    !call cpu_time(t)
+
+    ! This returns wall time, suitable for OpenMP
+    integer(kind=i64) :: c, rate
+    call system_clock(c, rate)
+    t = real(c)/real(rate)
 
     select case (mode)
 
