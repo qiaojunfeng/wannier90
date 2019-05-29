@@ -2188,11 +2188,11 @@ contains
           write (stdout, '(1x,a)') ' ----------      ----      ----'
           cur_time = io_wallclocktime()
           prev_time = cur_time
-          write (stdout, '(5x,a,3x,f10.1,f10.1)') &
+          write (stdout, '(5x,a,3x,f10.3,f10.3)') &
             '  0%', cur_time, cur_time - prev_time
         else if (sum_k == tot_k) then
           cur_time = io_wallclocktime()
-          write (stdout, '(5x,a,3x,f10.1,f10.1)') &
+          write (stdout, '(5x,a,3x,f10.3,f10.3)') &
             '100%', cur_time, cur_time - prev_time
           write (stdout, '(1x,a)') ''
         else
@@ -2200,7 +2200,7 @@ contains
           if (finished >= (percentage + 1)) then
             percentage = ceiling(finished)
             cur_time = io_wallclocktime()
-            write (stdout, '(5x,i2,a,3x,f10.1,f10.1)') &
+            write (stdout, '(5x,i2,a,3x,f10.3,f10.3)') &
               percentage, '0%', cur_time, cur_time - prev_time
             prev_time = cur_time
           end if
