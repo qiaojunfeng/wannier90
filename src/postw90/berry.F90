@@ -577,7 +577,7 @@ contains
 
 #ifdef DEBUG
       if (on_root) then
-        write (*, '(a,f9.5,a,f9.5)') 'before OMP loop, cpu_time ', io_time(), &
+        write (*, '(a,f12.5,a,f12.5)') 'before OMP loop, cpu_time ', io_time(), &
           ' wall_time ', io_wallclocktime()
       end if
 #endif
@@ -725,7 +725,7 @@ contains
         ! ***END CODE BLOCK 1***
 
 #ifdef DEBUG
-        write (*, '(a,i4,a,i4,a,i8,a,f9.5,a,f9.5)') &
+        write (*, '(a,i4,a,i4,a,i8,a,f12.5,a,f12.5)') &
           'node ', my_node_id, ' thread ', omp_get_thread_num(), ' loop_xyz ', loop_xyz, &
           ' cpu_time ', io_time(), ' wall_time ', io_wallclocktime()
 #endif
@@ -737,7 +737,7 @@ contains
 
 #ifdef DEBUG
       if (on_root) then
-        write (*, '(a,f9.5,a,f9.5)') 'after OMP loop, cpu_time ', io_time(), &
+        write (*, '(a,f12.5,a,f12.5)') 'after OMP loop, cpu_time ', io_time(), &
           ' wall_time ', io_wallclocktime()
       end if
 #endif
