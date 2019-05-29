@@ -71,7 +71,7 @@ contains
     !=====================================
     !! Stopwatch to time parts of the code
     !=====================================
-    use w90_constants, only: i64
+    use w90_constants, only: dp
 
     implicit none
 
@@ -87,9 +87,7 @@ contains
     !call cpu_time(t)
 
     ! This returns wall time, suitable for OpenMP
-    integer(kind=i64) :: c, rate
-    call system_clock(c, rate)
-    t = real(c)/real(rate)
+    t = io_wallclocktime()
 
     select case (mode)
 
@@ -437,6 +435,7 @@ contains
 
     real(kind=dp) :: io_wallclocktime
 
+    ! use 64bit integer to avoid wrap around caused by system_clock()
     integer(kind=i64) :: c0, c1
     integer(kind=i64) :: rate
     logical :: first = .true.
@@ -449,6 +448,8 @@ contains
       first = .false.
     else
       call system_clock(c1)
+      ! Note c0 or c1 itself is 64bit, (c1/rate) or (c0/rate) may overflow,
+      ! their difference (c1 - c0) should be used to calculate wall time.
       io_wallclocktime = real(c1 - c0)/real(rate)
     endif
     return
