@@ -100,17 +100,17 @@ shown in the following snippet.
    k-points       wall      diff
   calculated      time      time
   ----------      ----      ----
-       0%          0.0       0.0
-      10%         22.7      22.7
-      20%         36.5      13.8
-      30%         50.4      14.0
-      40%         64.4      14.0
-      50%         78.4      14.0
-      60%         92.5      14.1
-      70%        106.5      14.0
-      80%        120.4      13.9
-      90%        134.2      13.8
-     100%        147.9      13.7
+       0%        3.388     0.000
+      10%       18.110    14.722
+      20%       33.240    15.130
+      30%       48.145    14.905
+      40%       63.103    14.958
+      50%       78.111    15.008
+      60%       93.145    15.034
+      70%      108.066    14.920
+      80%      123.065    14.999
+      90%      138.097    15.032
+     100%      153.607    15.510
 
 
  Interpolation grid: 25 25 25
@@ -126,9 +126,6 @@ This might be helpful as you can roughly
 estimate the total computational time 
 of your calculation, or it might give credence to the code that it is actually functioning :). 
 Note this report is merely based on the ``root'' computation node. It is accurate if the {\tt postw90} is run in serial, or the load on each node is balanced if running in parallel. However, the estimation is rough if loads are not balanced among nodes. This may happen if the performance of nodes in your cluster are not identical, or adaptive kmesh refinements are triggered so some nodes may compute much more $k$-points than others. 
-Besides, if you are careful enough, you may find the diff time of 10\% is much larger than later ones. This 
-is caused by some done-once-and-for-all computations carried out at the beginning, thus 
-later computations are much faster. 
 \end{itemize}
 
 %\clearpage
