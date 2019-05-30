@@ -74,10 +74,11 @@ contains
     !! arrays wdist_ndeg, irdist_ws, crdist_ws.
 
     use w90_parameters, only: num_wann, wannier_centres, real_lattice, &
-      recip_lattice, iprint
+      recip_lattice, iprint, timing_level
     !translation_centre_frac, automatic_translation,lenconfac
-    use w90_io, only: stdout, io_error
+    use w90_io, only: stdout, io_error, io_stopwatch
     use w90_utility, only: utility_cart_to_frac, utility_frac_to_cart
+    use w90_comms, only: on_root
 
     implicit none
 
@@ -90,6 +91,9 @@ contains
     integer :: shifts(3, ndegenx)
     real(DP) :: irvec_cart(3), tmp(3), tmp_frac(3), R_out(3, ndegenx)
 
+    if (timing_level > 1 .and. on_root) &
+      call io_stopwatch('w90_ws_distance: ws_translate_dist', 1)
+
     ! The subroutine does nothing if called more than once, which may
     ! not be the best thing if you invoke it while the WFs are moving
     if (present(force_recompute)) then
@@ -97,7 +101,11 @@ contains
         call clean_ws_translate()
       endif
     endif
-    if (done_ws_distance) return
+    if (done_ws_distance) then
+      if (timing_level > 1 .and. on_root) &
+        call io_stopwatch('w90_ws_distance: ws_translate_dist', 2)
+      return
+    end if
     done_ws_distance = .true.
 
     if (ndegenx*num_wann*nrpts <= 0) then
@@ -141,6 +149,10 @@ contains
         enddo
       enddo
     enddo
+
+    if (timing_level > 1 .and. on_root) &
+      call io_stopwatch('w90_ws_distance: ws_translate_dist', 2)
+
   end subroutine ws_translate_dist
 
   subroutine R_wz_sc(R_in, R0, ndeg, R_out, shifts)
