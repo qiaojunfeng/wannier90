@@ -199,7 +199,7 @@ program postw90
   if (on_root) then
     time1 = io_wallclocktime()
     write (stdout, '(/1x,a25,f11.3,a)') &
-      'Time to read and process .chk    ', time1 - time2, ' (sec)'
+      'Time to process .chk     ', time1 - time2, ' (sec)'
   endif
   !
   ! Now perform one or more of the following tasks
