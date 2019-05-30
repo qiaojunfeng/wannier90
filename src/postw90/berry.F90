@@ -519,10 +519,6 @@ contains
 
         if (eval_shc) then
           ! print calculation progress, from 0%, 10%, ... to 100%
-          ! Note the 1st call to berry_get_shc_klist will be much longer
-          ! than later calls due to the time spent on
-          !   berry_get_shc_klist -> wham_get_eig_deleig ->
-          !   pw90common_fourier_R_to_k -> ws_translate_dist
           call berry_print_progress()
           if (.not. shc_freq_scan) then
             call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
@@ -675,10 +671,6 @@ contains
 
         if (eval_shc) then
           ! print calculation progress, from 0%, 10%, ... to 100%
-          ! Note the 1st call to berry_get_shc_klist will be much longer
-          ! than later calls due to the time spent on
-          !   berry_get_shc_klist -> wham_get_eig_deleig ->
-          !   pw90common_fourier_R_to_k -> ws_translate_dist
           call berry_print_progress()
           if (.not. shc_freq_scan) then
             call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
@@ -1245,7 +1237,7 @@ contains
         write (stdout, '(/,1x,a)') &
           '----------------------------------------------------------'
         write (stdout, '(1x,a)') &
-          'Output data files related to Spin Hall conductivity:'
+          'Output data files related to spin Hall conductivity:'
         write (stdout, '(1x,a)') &
           '----------------------------------------------------------'
         !
@@ -2142,22 +2134,23 @@ contains
 
   end subroutine berry_get_shc_klist
 
-  subroutine berry_print_progress(init, start_k, end_k, step_k)
+  subroutine berry_print_progress(init, start_k, stop_k, step_k)
     !============================================================!
     ! Print k-points calculation progress, seperated into 11 points,
     ! from 0%, 10%, ... to 100%
-    ! start_k, end_k are inclusive
+    ! start_k, stop_k are inclusive
     ! First call with init = .true. before entering the loop,
     ! then call once at each iteration.
-    ! Should be called exactly ((end_k - start_k)/step_k + 1) times.
+    ! Should be called exactly ((stop_k - start_k)/step_k + 1) times.
     !============================================================!
     use w90_comms, only: on_root
     use w90_io, only: stdout, io_wallclocktime
+    use w90_constants, only: dp
 
     implicit none
 
     logical, intent(in), optional :: init
-    integer, intent(in), optional :: start_k, end_k, step_k
+    integer, intent(in), optional :: start_k, stop_k, step_k
 
     real(kind=dp) :: cur_time, finished
 
@@ -2173,7 +2166,7 @@ contains
       if (PRESENT(init) .and. init) then
         ! The length of the array start:step:end
         ! e.g. 2 for 0:4:7 = [0, 4], 3 for 3:4:11 = [3, 7, 11]
-        tot_k = (end_k - start_k)/step_k + 1
+        tot_k = (stop_k - start_k)/step_k + 1
         sum_k = 0
         percentage = 0
       else
@@ -2196,9 +2189,9 @@ contains
             '100%', cur_time, cur_time - prev_time
           write (stdout, '(1x,a)') ''
         else
-          finished = 10.0_dp*real(sum_k)/real(tot_k)
+          finished = 10.0_dp*real(sum_k, dp)/real(tot_k, dp)
           if (finished >= (percentage + 1)) then
-            percentage = ceiling(finished)
+            percentage = floor(finished)
             cur_time = io_wallclocktime()
             write (stdout, '(5x,i2,a,3x,f10.3,f10.3)') &
               percentage, '0%', cur_time, cur_time - prev_time
