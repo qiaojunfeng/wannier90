@@ -55,6 +55,11 @@ module w90_get_oper
   complex(kind=dp), allocatable, save :: SH_R(:, :, :, :) ! <0n|sigma_x,y,z.H|Rm>
   !! $$\langle 0n | \sigma_{x,y,z}.H  | Rm \rangle$$
 
+  complex(kind=dp), allocatable, save :: HA_R(:, :, :) ! <0n|HA|Rm>
+  !! $$\langle 0n | HA | Rm \rangle$$
+  !! where HA can be kinetic, local potential, non-local potential operator
+  !! of the Hamiltonian
+
 contains
 
   !======================================================!
@@ -1443,6 +1448,138 @@ contains
       ('Error: Problem reading input file '//trim(seedname)//'.spn')
 
   end subroutine get_SHC_R
+
+  subroutine get_HA_R
+    !======================================================
+    !
+    !! computes <0n|HA|Rm>, in eV, where HA can be
+    !! kinetic, local potential, non-local potential operator
+    !! (pwscf uses Ry, but pw2wannier90 converts to eV)
+    !
+    !======================================================
+
+    use w90_constants, only: dp, cmplx_0
+    use w90_io, only: io_error, stdout, io_stopwatch, &
+      io_file_unit, seedname
+    use w90_parameters, only: num_wann, ndimwin, num_kpts, num_bands, &
+      have_disentangled, timing_level
+    use w90_postw90_common, only: nrpts, v_matrix
+    use w90_comms, only: on_root, comms_bcast
+
+    integer                       :: i, j, n, m, ii, ik, winmin_q, hmn_in, &
+                                     ir, io, idum, ivdum(3), ivdum_old(3), counter, ierr, nb_tmp, nkp_tmp
+    integer, allocatable          :: num_states(:)
+    real(kind=dp)                 :: rdum_real, rdum_imag
+    complex(kind=dp), allocatable :: HA_q(:, :, :)
+    complex(kind=dp), allocatable :: hmn_o(:, :, :), hmn_temp(:)
+    logical                       :: new_ir
+    character(len=60)             :: header
+    logical                       :: hmn_formatted = .true.
+
+    if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_HA_R', 1)
+
+    if (.not. allocated(HA_R)) then
+      allocate (HA_R(num_wann, num_wann, nrpts))
+    else
+      if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_HA_R', 2)
+      return
+    end if
+
+    if (on_root) then
+
+      allocate (hmn_o(num_bands, num_bands, num_kpts))
+      allocate (HA_q(num_wann, num_wann, num_kpts))
+
+      allocate (num_states(num_kpts))
+      do ik = 1, num_kpts
+        if (have_disentangled) then
+          num_states(ik) = ndimwin(ik)
+        else
+          num_states(ik) = num_wann
+        endif
+      enddo
+
+      ! Read from .hmn file the original operator matrices <psi_nk|HA|psi_mk>
+      ! between ab initio eigenstates
+      !
+      hmn_in = io_file_unit()
+      if (hmn_formatted) then
+        open (unit=hmn_in, file=trim(seedname)//'.hmn', form='formatted', &
+              status='old', err=109)
+        write (stdout, '(/a)', advance='no') &
+          ' Reading Hamiltonian operator matrices from '//trim(seedname)//'.hmn in get_HA_R : '
+        read (hmn_in, *, err=110, end=110) header
+        write (stdout, '(a)') trim(header)
+        read (hmn_in, *, err=110, end=110) nb_tmp, nkp_tmp
+      else
+        open (unit=hmn_in, file=trim(seedname)//'.hmn', form='unformatted', &
+              status='old', err=109)
+        write (stdout, '(/a)', advance='no') &
+          ' Reading Hamiltonian operator matrices from '//trim(seedname)//'.hmn in get_HA_R : '
+        read (hmn_in, err=110, end=110) header
+        write (stdout, '(a)') trim(header)
+        read (hmn_in, err=110, end=110) nb_tmp, nkp_tmp
+      endif
+      if (nb_tmp .ne. num_bands) &
+        call io_error(trim(seedname)//'.hmn has wrong number of bands')
+      if (nkp_tmp .ne. num_kpts) &
+        call io_error(trim(seedname)//'.hmn has wrong number of k-points')
+      if (hmn_formatted) then
+        do ik = 1, num_kpts
+          do m = 1, num_bands
+            do n = 1, m
+              read (hmn_in, *, err=110, end=110) rdum_real, rdum_imag
+              hmn_o(n, m, ik) = cmplx(rdum_real, rdum_imag, dp)
+              ! Read upper-triangular part, now build the rest
+              hmn_o(m, n, ik) = conjg(hmn_o(n, m, ik))
+            end do
+          end do
+        enddo
+      else
+        allocate (hmn_temp((num_bands*(num_bands + 1))/2), stat=ierr)
+        if (ierr /= 0) call io_error('Error in allocating hmm_temp in get_HA_R')
+        do ik = 1, num_kpts
+          read (hmn_in) (hmn_temp(m), m=1, (num_bands*(num_bands + 1))/2)
+          counter = 0
+          do m = 1, num_bands
+            do n = 1, m
+              counter = counter + 1
+              hmn_o(n, m, ik) = hmn_temp(counter)
+              hmn_o(m, n, ik) = conjg(hmn_temp(counter))
+            end do
+          end do
+        end do
+        deallocate (hmn_temp, stat=ierr)
+        if (ierr /= 0) call io_error('Error in deallocating hmn_temp in get_HA_R')
+      endif
+
+      close (hmn_in)
+
+      ! Transform to projected subspace, Wannier gauge
+      !
+      HA_q(:, :, :) = cmplx_0
+      do ik = 1, num_kpts
+        call get_gauge_overlap_matrix( &
+          ik, num_states(ik), &
+          ik, num_states(ik), &
+          hmn_o(:, :, ik), HA_q(:, :, ik))
+      enddo !ik
+
+      call fourier_q_to_R(HA_q(:, :, :), HA_R(:, :, :))
+
+    endif !on_root
+
+    call comms_bcast(HA_R(1, 1, 1), num_wann*num_wann*nrpts)
+
+    if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_HA_R', 2)
+    return
+
+109 call io_error &
+      ('Error: Problem opening input file '//trim(seedname)//'.hmn')
+110 call io_error &
+      ('Error: Problem reading input file '//trim(seedname)//'.hmn')
+
+  end subroutine get_HA_R
 
   !=========================================================!
   !                   PRIVATE PROCEDURES                    !

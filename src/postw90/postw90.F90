@@ -240,6 +240,7 @@ program postw90
   endif
 
   if (geninterp) call geninterp_main
+  if (geninterp_hmn) call geninterp_hamiltonian
 
   if (boltzwann) call boltzwann_main
 
