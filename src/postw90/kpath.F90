@@ -52,7 +52,8 @@ contains
     use w90_parameters, only: num_wann, kpath_task, &
       bands_num_spec_points, bands_label, &
       kpath_bands_colour, nfermi, fermi_energy_list, &
-      berry_curv_unit, shc_alpha, shc_beta, shc_gamma, kubo_adpt_smr
+      berry_curv_unit, shc_alpha, shc_beta, shc_gamma, kubo_adpt_smr, &
+      shc_decomp
     use w90_get_oper, only: get_HH_R, HH_R, get_AA_R, get_BB_R, get_CC_R, &
       get_FF_R, get_SS_R, get_SHC_R
     use w90_spin, only: spin_get_nk
@@ -70,6 +71,7 @@ contains
                          imh_k_list(3, 3, nfermi), Morb_k(3, 3), &
                          range, zmin, zmax
     real(kind=dp)     :: shc_k_band(num_wann), shc_k_fermi(nfermi)
+    real(kind=dp)     :: shc_k_band_decomp(num_wann,2), shc_k_fermi_decomp(nfermi,2)
     real(kind=dp), allocatable, dimension(:) :: kpath_len
     logical           :: plot_bands, plot_curv, plot_morb, plot_shc
     character(len=120) :: file_name
@@ -81,7 +83,9 @@ contains
                                      morb(:, :), my_morb(:, :), &
                                      color(:, :), my_color(:, :), &
                                      plot_kpoint(:, :), my_plot_kpoint(:, :), &
-                                     shc(:), my_shc(:)
+                                     shc(:), my_shc(:), &
+                                     all_shc_decomp(:, :), my_shc_decomp(:,:), &
+                                     color_shc_decomp(:, :, :), my_color_shc_decomp(:, :, :)
     character(len=3), allocatable  :: glabel(:)
 
     ! Everything is done on the root node (not worthwhile parallelizing)
@@ -161,6 +165,9 @@ contains
       allocate (UU(num_wann, num_wann))
       allocate (my_eig(num_wann, my_num_pts))
       if (kpath_bands_colour /= 'none') allocate (my_color(num_wann, my_num_pts))
+      if (kpath_bands_colour == 'shc' .and. shc_decomp) then
+        allocate (my_color_shc_decomp(num_wann, 2, my_num_pts))
+      end if
     end if
 
     ! Value of the vertical coordinate in the actual plots
@@ -168,6 +175,7 @@ contains
     if (plot_curv) allocate (my_curv(my_num_pts, 3))
     if (plot_morb) allocate (my_morb(my_num_pts, 3))
     if (plot_shc) allocate (my_shc(my_num_pts))
+    if (plot_shc .and. shc_decomp) allocate (my_shc_decomp(my_num_pts,2))
 
     ! Loop over local junk of k-points on the path and evaluate the requested quantities
     !
@@ -197,8 +205,15 @@ contains
             end if
           end do
         else if (kpath_bands_colour == 'shc') then
-          call berry_get_shc_klist(kpt, shc_k_band=shc_k_band)
-          my_color(:, loop_kpt) = shc_k_band
+          if (.not. shc_decomp) then
+            call berry_get_shc_klist(kpt, shc_k_band=shc_k_band)
+            my_color(:, loop_kpt) = shc_k_band
+          else
+            call berry_get_shc_klist(kpt, shc_k_band=shc_k_band,&
+              shc_k_band_decomp=shc_k_band_decomp)
+            my_color(:, loop_kpt) = shc_k_band
+            my_color_shc_decomp(:, :, loop_kpt) = shc_k_band_decomp(:, :)
+          end if
         end if
       end if
 
@@ -222,8 +237,15 @@ contains
       end if
 
       if (plot_shc) then
-        call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
-        my_shc(loop_kpt) = shc_k_fermi(1)
+        if (.not. shc_decomp) then
+          call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
+          my_shc(loop_kpt) = shc_k_fermi(1)
+        else
+          call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi,&
+            shc_k_fermi_decomp=shc_k_fermi_decomp)
+          my_shc(loop_kpt) = shc_k_fermi(1)
+          my_shc_decomp(loop_kpt,:) = shc_k_fermi_decomp(1,:)
+        end if
       end if
     end do !loop_kpt
 
@@ -236,6 +258,11 @@ contains
         allocate (color(num_wann, total_pts))
         call comms_gatherv(my_color, num_wann*my_num_pts, &
                            color, num_wann*counts, num_wann*displs)
+        if ((kpath_bands_colour == 'shc') .and. shc_decomp) then
+          allocate (color_shc_decomp(num_wann, 2, total_pts))
+          call comms_gatherv(my_color_shc_decomp, 2*num_wann*my_num_pts, &
+                           color_shc_decomp, 2*num_wann*counts, 2*num_wann*displs)
+        end if
       end if
     end if
 
@@ -258,6 +285,10 @@ contains
     if (plot_shc) then
       allocate (shc(total_pts))
       call comms_gatherv(my_shc, my_num_pts, shc, counts, displs)
+      if (shc_decomp) then
+        allocate (all_shc_decomp(total_pts,2))
+        call comms_gatherv(my_shc_decomp, my_num_pts*2, all_shc_decomp, counts*2, displs*2)
+      end if
     end if
 
     if (on_root) then
@@ -283,9 +314,15 @@ contains
 
       if (plot_bands .and. kpath_bands_colour == 'shc') then
         if (berry_curv_unit == 'bohr2') color = color/bohr**2
+        if (shc_decomp) then
+          if (berry_curv_unit == 'bohr2') color_shc_decomp = color_shc_decomp/bohr**2
+        end if
       end if
       if (plot_shc) then
         if (berry_curv_unit == 'bohr2') shc = shc/bohr**2
+        if (shc_decomp) then
+          if (berry_curv_unit == 'bohr2') all_shc_decomp = all_shc_decomp/bohr**2
+        end if
       end if
 
       ! Axis labels
@@ -318,6 +355,10 @@ contains
           do loop_kpt = 1, total_pts
             if (kpath_bands_colour == 'none') then
               write (dataunit, '(2E16.8)') xval(loop_kpt), eig(i, loop_kpt)
+            else if ((kpath_bands_colour == 'shc') .and. shc_decomp) then
+              write (dataunit, '(5E16.8)') xval(loop_kpt), &
+                eig(i, loop_kpt), color(i, loop_kpt), &
+                color_shc_decomp(i,1,loop_kpt), color_shc_decomp(i,2,loop_kpt)
             else
               write (dataunit, '(3E16.8)') xval(loop_kpt), &
                 eig(i, loop_kpt), color(i, loop_kpt)
@@ -632,8 +673,13 @@ contains
         write (stdout, '(/,3x,a)') file_name
         open (dataunit, file=file_name, form='formatted')
         do loop_kpt = 1, total_pts
-          write (dataunit, '(2E16.8)') xval(loop_kpt), &
-            shc(loop_kpt)
+          if (.not. shc_decomp) then
+            write (dataunit, '(2E16.8)') xval(loop_kpt), &
+              shc(loop_kpt)
+          else
+            write (dataunit, '(4E16.8)') xval(loop_kpt), &
+              shc(loop_kpt), all_shc_decomp(loop_kpt,1), all_shc_decomp(loop_kpt,2)
+          end if
         end do
         write (dataunit, *) ' '
         close (dataunit)

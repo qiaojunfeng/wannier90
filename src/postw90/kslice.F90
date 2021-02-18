@@ -52,7 +52,7 @@ contains
     use w90_parameters, only: num_wann, kslice, kslice_task, kslice_2dkmesh, &
       kslice_corner, kslice_b1, kslice_b2, &
       kslice_fermi_lines_colour, recip_lattice, &
-      nfermi, fermi_energy_list, berry_curv_unit, kubo_adpt_smr
+      nfermi, fermi_energy_list, berry_curv_unit, kubo_adpt_smr, shc_decomp
     use w90_get_oper, only: get_HH_R, HH_R, get_AA_R, get_BB_R, get_CC_R, &
       get_SS_R, get_SHC_R
     use w90_wan_ham, only: wham_get_eig_deleig
@@ -70,7 +70,8 @@ contains
                          imf_k_list(3, 3, nfermi), img_k_list(3, 3, nfermi), &
                          imh_k_list(3, 3, nfermi), Morb_k(3, 3), curv(3), morb(3), &
                          spn_k(num_wann), del_eig(num_wann, 3), Delta_k, Delta_E, &
-                         zhat(3), vdum(3), rdum, shc_k_fermi(nfermi)
+                         zhat(3), vdum(3), rdum, shc_k_fermi(nfermi), &
+                         shc_k_fermi_decomp(nfermi, 2)
     logical           :: plot_fermi_lines, plot_curv, plot_morb, &
                          fermi_lines_color, heatmap, plot_shc
     character(len=120) :: filename, square
@@ -126,7 +127,9 @@ contains
     if (plot_shc) then
       call get_AA_R
       call get_SS_R
-      call get_SHC_R
+      if (.not. shc_decomp) then
+        call get_SHC_R
+      end if
     end if
 
     if (fermi_lines_color) call get_SS_R
@@ -268,7 +271,14 @@ contains
         morb(3) = sum(Morb_k(:, 3))
         my_zdata(:, iloc) = morb(:)
       else if (plot_shc) then
-        call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
+        if (shc_decomp) then
+          call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi, &
+            shc_k_fermi_decomp=shc_k_fermi_decomp)
+          my_zdata(2, iloc) = shc_k_fermi_decomp(1, 1)
+          my_zdata(3, iloc) = shc_k_fermi_decomp(1, 2)
+        else
+          call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
+        end if
         my_zdata(1, iloc) = shc_k_fermi(1)
       end if
 
@@ -381,9 +391,15 @@ contains
           open (dataunit, file=filename, form='formatted')
           if (plot_shc) then
             if (berry_curv_unit == 'bohr2') zdata = zdata/bohr**2
-            do loop_kpt = 1, nkpts
-              write (dataunit, '(1E16.8)') zdata(1, loop_kpt)
-            end do
+            if (shc_decomp) then
+              do loop_kpt = 1, nkpts
+                write (dataunit, '(3E16.8)') zdata(:, loop_kpt)
+              end do
+            else
+              do loop_kpt = 1, nkpts
+                write (dataunit, '(1E16.8)') zdata(1, loop_kpt)
+              end do
+            end if
           else
             do loop_kpt = 1, nkpts
               write (dataunit, '(4E16.8)') zdata(:, loop_kpt)

@@ -100,7 +100,7 @@ contains
       kubo_adpt_smr, kubo_adpt_smr_fac, &
       kubo_adpt_smr_max, kubo_smr_fixed_en_width, &
       scissors_shift, num_valence_bands, &
-      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift
+      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift, shc_decomp
     use w90_get_oper, only: get_HH_R, get_AA_R, get_BB_R, get_CC_R, &
       get_SS_R, get_SHC_R
 #ifdef DEBUG
@@ -153,6 +153,9 @@ contains
     complex(kind=dp), allocatable :: shc_freq(:), shc_k_freq(:)
     ! for fermi energy scan, adaptive kmesh
     real(kind=dp), allocatable    :: shc_k_fermi_dummy(:)
+    ! decomposition of SHC into diagonal and non-diagonal parts
+    real(kind=dp), allocatable    :: shc_fermi_decomp(:,:), shc_k_fermi_decomp(:,:)
+    real(kind=dp), allocatable    :: shc_k_fermi_decomp_dummy(:,:)
 
     real(kind=dp)     :: kweight, kweight_adpt, kpt(3), kpt_ad(3), &
                          db1, db2, db3, fac, freq, rdum, vdum(3)
@@ -304,7 +307,9 @@ contains
       call get_HH_R
       call get_AA_R
       call get_SS_R
-      call get_SHC_R
+      if (.not. shc_decomp) then
+        call get_SHC_R
+      end if
 
       if (shc_freq_scan) then
         allocate (shc_freq(kubo_nfreq))
@@ -320,6 +325,13 @@ contains
         shc_k_fermi = 0.0_dp
         shc_k_fermi_dummy = 0.0_dp
         adpt_counter_list = 0
+        ! shc decomposition
+        allocate (shc_fermi_decomp(1,1))
+        allocate (shc_k_fermi_decomp(1,1))
+        allocate (shc_k_fermi_decomp_dummy(1,1))
+        shc_fermi_decomp = 0.0_dp
+        shc_k_fermi_decomp = 0.0_dp
+        shc_k_fermi_decomp_dummy = 0.0_dp
 #endif
       else
         allocate (shc_fermi(nfermi))
@@ -330,6 +342,13 @@ contains
         !only used for fermiscan & adpt kmesh
         shc_k_fermi_dummy = 0.0_dp
         adpt_counter_list = 0
+        ! shc decomposition
+        allocate (shc_fermi_decomp(nfermi,2))
+        allocate (shc_k_fermi_decomp(nfermi,2))
+        allocate (shc_k_fermi_decomp_dummy(nfermi,2))
+        shc_fermi_decomp = 0.0_dp
+        shc_k_fermi_decomp = 0.0_dp
+        shc_k_fermi_decomp_dummy = 0.0_dp
 #ifdef OPENMP
         allocate (shc_freq(1))
         allocate (shc_k_freq(1))
@@ -350,6 +369,13 @@ contains
       shc_k_fermi = 0.0_dp
       shc_k_fermi_dummy = 0.0_dp
       adpt_counter_list = 0
+      ! shc decomposition
+      allocate (shc_fermi_decomp(1,1))
+      allocate (shc_k_fermi_decomp(1,1))
+      allocate (shc_k_fermi_decomp_dummy(1,1))
+      shc_fermi_decomp = 0.0_dp
+      shc_k_fermi_decomp = 0.0_dp
+      shc_k_fermi_decomp_dummy = 0.0_dp
 #endif
     endif
 
@@ -521,7 +547,12 @@ contains
           ! print calculation progress, from 0%, 10%, ... to 100%
           call berry_print_progress()
           if (.not. shc_freq_scan) then
-            call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
+            if (.not. shc_decomp) then
+              call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
+            else
+              call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi, &
+                shc_k_fermi_decomp=shc_k_fermi_decomp)
+            end if
             !check whether needs to tigger adpt kmesh or not.
             !Since the calculated shc_k at one Fermi energy can be reused
             !by all the Fermi energies, if we find out that at a specific
@@ -549,12 +580,22 @@ contains
               do loop_adpt = 1, berry_curv_adpt_kmesh**3
                 !Using shc_k here would corrupt values for other
                 !kpt, hence dummy. Only if-th element is used.
-                call berry_get_shc_klist(kpt(:) + adkpt(:, loop_adpt), &
+                if (.not. shc_decomp) then
+                  call berry_get_shc_klist(kpt(:) + adkpt(:, loop_adpt), &
                                          shc_k_fermi=shc_k_fermi_dummy)
+                else
+                  call berry_get_shc_klist(kpt(:) + adkpt(:, loop_adpt), &
+                                         shc_k_fermi=shc_k_fermi_dummy, &
+                                         shc_k_fermi_decomp=shc_k_fermi_decomp_dummy)
+                  shc_fermi_decomp = shc_fermi_decomp + kweight_adpt*shc_k_fermi_decomp_dummy
+                end if
                 shc_fermi = shc_fermi + kweight_adpt*shc_k_fermi_dummy
               end do
             else
               shc_fermi = shc_fermi + kweight*shc_k_fermi
+              if (shc_decomp) then
+                shc_fermi_decomp = shc_fermi_decomp + kweight*shc_k_fermi_decomp
+              end if
             end if
           else ! freq_scan, no adaptive kmesh
             call berry_get_shc_klist(kpt, shc_k_freq=shc_k_freq)
@@ -596,13 +637,14 @@ contains
 !$OMP      &          img_k_list, imh_k_list, &
 !$OMP      &          kubo_H_k, kubo_AH_k, jdos_k, kubo_H_k_spn, kubo_AH_k_spn, jdos_k_spn, &
 !$OMP      &          sc_k_list, &
-!$OMP      &          shc_k_fermi, shc_k_fermi_dummy, shc_k_freq, ladpt_kmesh) &
+!$OMP      &          shc_k_fermi, shc_k_fermi_dummy, shc_k_freq, ladpt_kmesh, &
+!$OMP      &          shc_k_fermi_decomp, shc_k_fermi_decomp_dummy) &
 !$OMP      &  reduction(+:adpt_counter_list, &
 !$OMP      &              imf_list, &
 !$OMP      &              imf_list2, img_list, imh_list, &
 !$OMP      &              kubo_H, kubo_AH, jdos, kubo_H_spn, kubo_AH_spn, jdos_spn, &
 !$OMP      &              sc_list, &
-!$OMP      &              shc_fermi, shc_freq)
+!$OMP      &              shc_fermi, shc_freq, shc_fermi_decomp)
 #endif
       do loop_xyz = loop_start, loop_stop, loop_step
         loop_x = loop_xyz/(berry_kmesh(2)*berry_kmesh(3))
@@ -673,7 +715,12 @@ contains
           ! print calculation progress, from 0%, 10%, ... to 100%
           call berry_print_progress()
           if (.not. shc_freq_scan) then
-            call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
+            if (.not. shc_decomp) then
+              call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi)
+            else
+              call berry_get_shc_klist(kpt, shc_k_fermi=shc_k_fermi, &
+                shc_k_fermi_decomp=shc_k_fermi_decomp)
+            end if
             !check whether needs to tigger adpt kmesh or not.
             !Since the calculated shc_k at one Fermi energy can be reused
             !by all the Fermi energies, if we find out that at a specific
@@ -701,12 +748,22 @@ contains
               do loop_adpt = 1, berry_curv_adpt_kmesh**3
                 !Using shc_k here would corrupt values for other
                 !kpt, hence dummy. Only if-th element is used.
-                call berry_get_shc_klist(kpt(:) + adkpt(:, loop_adpt), &
+                if (.not. shc_decomp) then
+                  call berry_get_shc_klist(kpt(:) + adkpt(:, loop_adpt), &
                                          shc_k_fermi=shc_k_fermi_dummy)
+                else
+                  call berry_get_shc_klist(kpt(:) + adkpt(:, loop_adpt), &
+                                         shc_k_fermi=shc_k_fermi_dummy, &
+                                         shc_k_fermi_decomp=shc_k_fermi_decomp_dummy)
+                  shc_fermi_decomp = shc_fermi_decomp + kweight_adpt*shc_k_fermi_decomp_dummy
+                end if
                 shc_fermi = shc_fermi + kweight_adpt*shc_k_fermi_dummy
               end do
             else
               shc_fermi = shc_fermi + kweight*shc_k_fermi
+              if (shc_decomp) then
+                shc_fermi_decomp = shc_fermi_decomp + kweight*shc_k_fermi_decomp
+              end if
             end if
           else ! freq_scan, no adaptive kmesh
             call berry_get_shc_klist(kpt, shc_k_freq=shc_k_freq)
@@ -770,6 +827,9 @@ contains
       else
         call comms_reduce(shc_fermi(1), nfermi, 'SUM')
         call comms_reduce(adpt_counter_list(1), nfermi, 'SUM')
+        if (shc_decomp) then
+          call comms_reduce(shc_fermi_decomp(1,1), nfermi*2, 'SUM')
+        end if
       end if
     end if
 
@@ -1232,6 +1292,9 @@ contains
           shc_freq = shc_freq*fac
         else
           shc_fermi = shc_fermi*fac
+          if (shc_decomp) then
+            shc_fermi_decomp = shc_fermi_decomp*fac
+          end if
         endif
         !
         write (stdout, '(/,1x,a)') &
@@ -1251,12 +1314,21 @@ contains
         write (stdout, '(/,3x,a)') '* '//file_name
         open (file_unit, FILE=file_name, STATUS='UNKNOWN', FORM='FORMATTED')
         if (.not. shc_freq_scan) then
-          write (file_unit, '(a,3x,a,3x,a)') &
-            '#No.', 'Fermi energy(eV)', 'SHC((hbar/e)*S/cm)'
-          do n = 1, nfermi
-            write (file_unit, '(I4,1x,F12.6,1x,E17.8)') &
-              n, fermi_energy_list(n), shc_fermi(n)
-          enddo
+          if (.not. shc_decomp) then
+            write (file_unit, '(a,3x,a,3x,a)') &
+              '#No.', 'Fermi energy(eV)', 'SHC((hbar/e)*S/cm)'
+            do n = 1, nfermi
+              write (file_unit, '(I4,1x,F12.6,1x,E17.8)') &
+                n, fermi_energy_list(n), shc_fermi(n)
+            enddo
+          else
+            write (file_unit, '(a,3x,a,3x,a,3x,a,3x,a)') &
+              '#No.', 'Fermi energy(eV)', 'SHC((hbar/e)*S/cm)', 'diag', 'off-diag'
+            do n = 1, nfermi
+              write (file_unit, '(I4,1x,F12.6,1x,E17.8,1x,E17.8,1x,E17.8)') &
+                n, fermi_energy_list(n), shc_fermi(n), shc_fermi_decomp(n,1), shc_fermi_decomp(n,2)
+            enddo
+          end if
         else
           write (file_unit, '(a,3x,a,3x,a,3x,a)') '#No.', 'Frequency(eV)', &
             'Re(sigma)((hbar/e)*S/cm)', 'Im(sigma)((hbar/e)*S/cm)'
@@ -1864,7 +1936,8 @@ contains
 
   end subroutine berry_get_sc_klist
 
-  subroutine berry_get_shc_klist(kpt, shc_k_fermi, shc_k_freq, shc_k_band)
+  subroutine berry_get_shc_klist(kpt, shc_k_fermi, shc_k_freq, shc_k_band, &
+      shc_k_fermi_decomp, shc_k_band_decomp)
     !====================================================================!
     !                                                                    !
     ! Contribution from a k-point to the spin Hall conductivity on a list
@@ -1883,6 +1956,8 @@ contains
     !    shc_k_fermi: return a list for different Fermi energies
     !    shc_k_freq:  return a list for different frequencies
     !    shc_k_band:  return a list for each energy band
+    !    shc_k_fermi_decomp: return a list for diag and off-diag SHC of different Fermi energies
+    !    shc_k_band_decomp:  return a list for diag and off-diag SHC of each energy band
     !
     !   Junfeng Qiao (18/8/2018)                                         !
     !====================================================================!
@@ -1893,12 +1968,15 @@ contains
       kubo_freq_list, kubo_adpt_smr, kubo_smr_fixed_en_width, &
       kubo_adpt_smr_max, kubo_adpt_smr_fac, berry_kmesh, &
       fermi_energy_list, nfermi, shc_alpha, shc_beta, shc_gamma, &
-      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift
+      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift, shc_decomp
     use w90_postw90_common, only: pw90common_get_occ, &
-      pw90common_fourier_R_to_k_vec, pw90common_kmesh_spacing
+      pw90common_fourier_R_to_k_vec, pw90common_kmesh_spacing, &
+      pw90common_fourier_R_to_k_new
     use w90_wan_ham, only: wham_get_D_h, wham_get_eig_deleig
-    use w90_get_oper, only: AA_R
+    use w90_get_oper, only: AA_R, SS_R
 
+    use w90_comms, only: on_root, num_nodes, my_node_id
+    use w90_utility, only: utility_zgemm_new
     implicit none
 
     ! args
@@ -1906,6 +1984,9 @@ contains
     real(kind=dp), optional, intent(out) :: shc_k_fermi(nfermi)
     complex(kind=dp), optional, intent(out) :: shc_k_freq(kubo_nfreq)
     real(kind=dp), optional, intent(out) :: shc_k_band(num_wann)
+    ! decomposition
+    real(kind=dp), optional, intent(out) :: shc_k_fermi_decomp(nfermi,2)
+    real(kind=dp), optional, intent(out) :: shc_k_band_decomp(num_wann,2)
 
     ! internal vars
     logical                       :: lfreq, lfermi, lband
@@ -1916,6 +1997,8 @@ contains
     complex(kind=dp), allocatable :: AA(:, :, :)
 
     complex(kind=dp)              :: js_k(num_wann, num_wann)
+    ! for shc_decomp
+    complex(kind=dp), allocatable :: SS(:,:)
 
     ! Adaptive smearing
     !
@@ -1928,12 +2011,22 @@ contains
     complex(kind=dp) :: omega_list(kubo_nfreq)
     real(kind=dp)    :: omega, rfac
     complex(kind=dp) :: prod, cdum, cfac
+    complex(kind=dp) :: prod_decomp(2)
+    real(kind=dp)    :: omega_decomp(2)
+
+    ! debug matrices
+    logical :: exist
+    character(len=120) :: outdat_filename
+    integer :: ii,ij
 
     allocate (HH(num_wann, num_wann))
     allocate (delHH(num_wann, num_wann, 3))
     allocate (UU(num_wann, num_wann))
     allocate (D_h(num_wann, num_wann, 3))
     allocate (AA(num_wann, num_wann, 3))
+    if (shc_decomp) then
+      allocate (SS(num_wann, num_wann))
+    end if
 
     lfreq = .false.
     lfermi = .false.
@@ -1945,10 +2038,16 @@ contains
     if (present(shc_k_fermi)) then
       shc_k_fermi = 0.0_dp
       lfermi = .true.
+      if (shc_decomp) then
+        shc_k_fermi_decomp = 0.0_dp
+      end if
     endif
     if (present(shc_k_band)) then
       shc_k_band = 0.0_dp
       lband = .true.
+      if (shc_decomp) then
+        shc_k_band_decomp = 0.0_dp
+      end if
     endif
 
     call wham_get_eig_deleig(kpt, eig, del_eig, HH, delHH, UU)
@@ -1965,8 +2064,58 @@ contains
     enddo
     AA = AA + cmplx_i*D_h ! Eq.(25) WYSV06
 
-    call berry_get_js_k(kpt, eig, del_eig(:, shc_alpha), &
-                        D_h(:, :, shc_alpha), UU, js_k)
+    if (.not. shc_decomp) then
+      call berry_get_js_k(kpt, eig, del_eig(:, shc_alpha), &
+                          D_h(:, :, shc_alpha), UU, js_k)
+    else
+      call pw90common_fourier_R_to_k_new(kpt, SS_R(:, :, :, shc_gamma), OO=SS)
+      call utility_rotate_new(SS, UU, num_wann)
+
+      !call utility_zgemm_new(SS, AA(:, :, shc_alpha), SV)
+      !SV = 1.0_dp/2.0_dp*(SV + CONJG(TRANSPOSE(SV)))
+
+      !if (my_node_id < 10) then
+      !  write (outdat_filename, '(a,I1,a)') 'ss_', my_node_id, '.dat'
+      !else
+      !  write (outdat_filename, '(a,I2,a)') 'ss_', my_node_id, '.dat'
+      !end if
+      !inquire(file=outdat_filename, exist=exist)
+      !if (exist) then
+      !  open(12, file=outdat_filename, status="old", position="append", action="write", form='formatted')
+      !else
+      !  open(12, file=outdat_filename, status="new", action="write", form='formatted')
+      !end if
+      !write(12, *) (kpt(ii),ii=1,3)
+      !do ii = 1, num_wann
+      !  do ij = 1, num_wann
+      !    write(12, '("(",g20.12,",",SP,g20.12,")")') SS(ii,ij)
+      !    flush(12)
+      !  end do
+      !end do
+      !close(12)
+      !! AA
+      !do i = 1, 3
+      !  if (my_node_id < 10) then
+      !    write (outdat_filename, '(a,I1,a,I1,a)') 'aa_', i, '_', my_node_id, '.dat'
+      !  else
+      !    write (outdat_filename, '(a,I1,a,I2,a)') 'aa_', i, '_', my_node_id, '.dat'
+      !  end if
+      !  inquire(file=outdat_filename, exist=exist)
+      !  if (exist) then
+      !    open(12, file=outdat_filename, status="old", position="append", action="write", form='formatted')
+      !  else
+      !    open(12, file=outdat_filename, status="new", action="write", form='formatted')
+      !  end if
+      !  write(12, *) (kpt(ii),ii=1,3)
+      !  do ii = 1, num_wann
+      !    do ij = 1, num_wann
+      !      write(12, '("(",g20.12,",",SP,g20.12,")")') AA(ii,ij,i)
+      !      flush(12)
+      !    end do
+      !  end do
+      !  close(12)
+      !end do
+    end if
 
     ! adpt_smr only works with berry_kmesh, so do not use
     ! adpt_smr in kpath or kslice plots.
@@ -1988,6 +2137,7 @@ contains
         omega_list = cmplx_0
       else if (lfermi .or. lband) then
         omega = 0.0_dp
+        if (shc_decomp) omega_decomp = 0.0_dp
       end if
       do m = 1, num_wann
         if (m == n) cycle
@@ -1996,7 +2146,28 @@ contains
         rfac = eig(m) - eig(n)
         !this will calculate AHC
         !prod = -rfac*cmplx_i*AA(n, m, shc_alpha) * rfac*cmplx_i*AA(m, n, shc_beta)
-        prod = js_k(n, m)*cmplx_i*rfac*AA(m, n, shc_beta)
+        if (.not. shc_decomp) then
+          prod = js_k(n, m)*cmplx_i*rfac*AA(m, n, shc_beta)
+        else
+          ! diagonal = spin * AHC
+          cdum = SS(n, n) * rfac*rfac*AA(n,m,shc_alpha)*AA(m,n,shc_beta)
+          cdum = cdum + SS(m, m) * rfac*rfac*AA(n,m,shc_alpha)*AA(m,n,shc_beta)
+          prod_decomp(1) = cdum/2.0_dp
+          ! off-diagonal
+          cdum = cmplx_0
+          do i = 1, num_wann
+            if (i /= n) then
+              cdum = cdum + SS(n, i) * (eig(i)-eig(m))*cmplx_i*AA(i,m,shc_alpha) * rfac*cmplx_i*AA(m,n,shc_beta)
+            end if
+            if (i /= m) then
+              cdum = cdum + SS(i, m) * (eig(n)-eig(i))*cmplx_i*AA(n,i,shc_alpha) * rfac*cmplx_i*AA(m,n,shc_beta)
+            end if
+          end do
+          cdum = cdum + SS(n, m) * del_eig(m, shc_alpha)*rfac*cmplx_i*AA(m, n, shc_beta)
+          cdum = cdum + SS(n, m) * del_eig(n, shc_alpha)*rfac*cmplx_i*AA(m, n, shc_beta)
+          prod_decomp(2) = cdum/2.0_dp
+          prod = prod_decomp(1) + prod_decomp(2)
+        end if
         if (kubo_adpt_smr) then
           ! Eq.(35) YWVS07
           vdum = del_eig(m, :) - del_eig(n, :)
@@ -2015,17 +2186,26 @@ contains
         else if (lfermi .or. lband) then
           rfac = -2.0_dp/(rfac**2 + eta_smr**2)
           omega = omega + rfac*aimag(prod)
+          if (shc_decomp) then
+            omega_decomp = omega_decomp + rfac*aimag(prod_decomp)
+          end if
         end if
       enddo
 
       if (lfermi) then
         do i = 1, nfermi
           shc_k_fermi(i) = shc_k_fermi(i) + occ_fermi(n, i)*omega
+          if (shc_decomp) then
+            shc_k_fermi_decomp(i,:) = shc_k_fermi_decomp(i,:) + occ_fermi(n, i)*omega_decomp(:)
+          end if
         end do
       else if (lfreq) then
         shc_k_freq = shc_k_freq + occ_freq(n)*omega_list
       else if (lband) then
         shc_k_band(n) = omega
+        if (shc_decomp) then
+          shc_k_band_decomp(n,:) = omega_decomp(:)
+        end if
       end if
     enddo
 

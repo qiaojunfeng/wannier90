@@ -221,6 +221,7 @@ module w90_parameters
   logical, public, save :: shc_bandshift
   integer, public, save :: shc_bandshift_firstband
   real(kind=dp), public, save :: shc_bandshift_energyshift
+  logical, public, save :: shc_decomp
 
   logical, public, save :: gyrotropic
   character(len=120), public, save :: gyrotropic_task
@@ -1329,6 +1330,9 @@ contains
     call param_get_keyword('shc_bandshift_energyshift', found, r_value=shc_bandshift_energyshift)
     if (shc_bandshift .and. (.not. found)) &
       call io_error('Error: shc_bandshift required but no shc_bandshift_energyshift provided')
+
+    shc_decomp = .false.
+    call param_get_keyword('shc_decomp', found, l_value=shc_decomp)
 
     spin_moment = .false.
     call param_get_keyword('spin_moment', found, &
@@ -6206,6 +6210,7 @@ contains
     call comms_bcast(shc_bandshift, 1)
     call comms_bcast(shc_bandshift_firstband, 1)
     call comms_bcast(shc_bandshift_energyshift, 1)
+    call comms_bcast(shc_decomp, 1)
 
     call comms_bcast(devel_flag, len(devel_flag))
     call comms_bcast(spin_moment, 1)
