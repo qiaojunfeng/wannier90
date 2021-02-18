@@ -286,8 +286,11 @@ contains
       allocate (shc(total_pts))
       call comms_gatherv(my_shc, my_num_pts, shc, counts, displs)
       if (shc_decomp) then
-        allocate (all_shc_decomp(total_pts,2))
-        call comms_gatherv(my_shc_decomp, my_num_pts*2, all_shc_decomp, counts*2, displs*2)
+        allocate (all_shc_decomp(total_pts, 2))
+        do i = 1, 2
+          call comms_gatherv(my_shc_decomp(:, i), my_num_pts, &
+            all_shc_decomp(:, i), counts, displs)
+        end do
       end if
     end if
 
