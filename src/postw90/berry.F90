@@ -343,9 +343,9 @@ contains
         shc_k_fermi_dummy = 0.0_dp
         adpt_counter_list = 0
         ! shc decomposition
-        allocate (shc_fermi_decomp(nfermi,2))
-        allocate (shc_k_fermi_decomp(nfermi,2))
-        allocate (shc_k_fermi_decomp_dummy(nfermi,2))
+        allocate (shc_fermi_decomp(nfermi,5))
+        allocate (shc_k_fermi_decomp(nfermi,5))
+        allocate (shc_k_fermi_decomp_dummy(nfermi,5))
         shc_fermi_decomp = 0.0_dp
         shc_k_fermi_decomp = 0.0_dp
         shc_k_fermi_decomp_dummy = 0.0_dp
@@ -828,7 +828,7 @@ contains
         call comms_reduce(shc_fermi(1), nfermi, 'SUM')
         call comms_reduce(adpt_counter_list(1), nfermi, 'SUM')
         if (shc_decomp) then
-          call comms_reduce(shc_fermi_decomp(1,1), nfermi*2, 'SUM')
+          call comms_reduce(shc_fermi_decomp(1,1), nfermi*5, 'SUM')
         end if
       end if
     end if
@@ -1322,11 +1322,12 @@ contains
                 n, fermi_energy_list(n), shc_fermi(n)
             enddo
           else
-            write (file_unit, '(a,3x,a,3x,a,3x,a,3x,a)') &
-              '#No.', 'Fermi energy(eV)', 'SHC((hbar/e)*S/cm)', 'diag', 'off-diag'
+            write (file_unit, '(a,7(3x,a))') &
+              '#No.', 'Fermi energy(eV)', 'SHC((hbar/e)*S/cm)', 'diag', 'off-diag', &
+              'diag-up_up', 'diag-down_down', 'diag-up_down'
             do n = 1, nfermi
-              write (file_unit, '(I4,1x,F12.6,1x,E17.8,1x,E17.8,1x,E17.8)') &
-                n, fermi_energy_list(n), shc_fermi(n), shc_fermi_decomp(n,1), shc_fermi_decomp(n,2)
+              write (file_unit, '(I4,1x,F12.6,1x,6(E17.8,1x))') &
+                n, fermi_energy_list(n), shc_fermi(n), (shc_fermi_decomp(n,i), i=1,5)
             enddo
           end if
         else
@@ -1985,7 +1986,7 @@ contains
     complex(kind=dp), optional, intent(out) :: shc_k_freq(kubo_nfreq)
     real(kind=dp), optional, intent(out) :: shc_k_band(num_wann)
     ! decomposition
-    real(kind=dp), optional, intent(out) :: shc_k_fermi_decomp(nfermi,2)
+    real(kind=dp), optional, intent(out) :: shc_k_fermi_decomp(nfermi,5)
     real(kind=dp), optional, intent(out) :: shc_k_band_decomp(num_wann,2)
 
     ! internal vars
@@ -2011,8 +2012,8 @@ contains
     complex(kind=dp) :: omega_list(kubo_nfreq)
     real(kind=dp)    :: omega, rfac
     complex(kind=dp) :: prod, cdum, cfac
-    complex(kind=dp) :: prod_decomp(2)
-    real(kind=dp)    :: omega_decomp(2)
+    complex(kind=dp) :: prod_decomp(5)
+    real(kind=dp)    :: omega_decomp(5)
 
     ! debug matrices
     logical :: exist
@@ -2149,10 +2150,19 @@ contains
         if (.not. shc_decomp) then
           prod = js_k(n, m)*cmplx_i*rfac*AA(m, n, shc_beta)
         else
+          prod_decomp = 0.0_dp
           ! diagonal = spin * AHC
           cdum = SS(n, n) * rfac*rfac*AA(n,m,shc_alpha)*AA(m,n,shc_beta)
           cdum = cdum + SS(m, m) * rfac*rfac*AA(n,m,shc_alpha)*AA(m,n,shc_beta)
           prod_decomp(1) = cdum/2.0_dp
+          ! diagonal, off-diagonal, up-up, down-down, up-down & down-up
+          if ((real(SS(n, n)) > 0) .and. (real(SS(m, m)) > 0)) then
+            prod_decomp(3) = cdum/2.0_dp
+          else if ((real(SS(n, n)) < 0) .and. (real(SS(m, m)) < 0)) then
+            prod_decomp(4) = cdum/2.0_dp
+          else
+            prod_decomp(5) = cdum/2.0_dp
+          end if
           ! off-diagonal
           cdum = cmplx_0
           do i = 1, num_wann
@@ -2204,7 +2214,7 @@ contains
       else if (lband) then
         shc_k_band(n) = omega
         if (shc_decomp) then
-          shc_k_band_decomp(n,:) = omega_decomp(:)
+          shc_k_band_decomp(n,:) = omega_decomp(1:2)
         end if
       end if
     enddo
