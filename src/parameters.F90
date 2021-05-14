@@ -113,6 +113,10 @@ module w90_parameters
   integer, public, save :: dis_spheres_num
   real(kind=dp), allocatable, public, save :: dis_spheres(:, :)
   ! GS-end
+  real(kind=dp), public, save :: dis_proj_min
+  !! lower threshold of disentanglement based on projectability, lower are discarded
+  real(kind=dp), public, save :: dis_proj_max
+  !! upper threshold of disentanglement based on projectability, higher are frozen
   integer, public, save :: num_iter
   !! Number of wannierisation iterations
   integer, public, save :: num_cg_steps
@@ -445,6 +449,7 @@ module w90_parameters
   integer, public, save, allocatable :: ndimwin(:)
   logical, public, save, allocatable :: lwindow(:, :)
   logical, public, save :: frozen_states
+  logical, public, save :: frozen_states_proj
 
   ! a_matrix and m_matrix_orig can be calculated internally from bloch states
   ! or read in from an ab-initio grid
@@ -1691,6 +1696,27 @@ contains
       if (found2 .and. .not. found) &
         call io_error('Error: param_read: found dis_froz_min but not dis_froz_max')
     endif
+
+    dis_proj_min = 0.1_dp; dis_proj_max = 0.9_dp
+    frozen_states_proj = .false.
+    call param_get_keyword('dis_proj_min', found, r_value=dis_proj_min)
+    if (found) then
+      if ((dis_proj_min < 0.0_dp) .or. (dis_proj_min > 1.0_dp)) &
+        call io_error('Error: param_read: dis_proj_min < 0.0 or > 1.0')
+      if (frozen_states) &
+        call io_error('Error: param_read: can only use either dis_froz_min/max or dis_proj_min/max')
+      frozen_states_proj = .true.
+    end if
+    call param_get_keyword('dis_proj_max', found2, r_value=dis_proj_max)
+    if (found2) then
+      if ((dis_proj_max < 0.0_dp) .or. (dis_proj_max > 1.0_dp)) &
+        call io_error('Error: param_read: dis_proj_max < 0.0 or > 1.0')
+      if (frozen_states) &
+        call io_error('Error: param_read: can only use either dis_froz_min/max or dis_proj_min/max')
+      frozen_states_proj = .true.
+    endif
+    if (dis_proj_max .lt. dis_proj_min) &
+      call io_error('Error: param_read: dis_proj_max is smaller than dis_proj_min')
 
     dis_num_iter = 200
     call param_get_keyword('dis_num_iter', found, i_value=dis_num_iter)
@@ -6095,6 +6121,8 @@ contains
     call comms_bcast(dis_win_max, 1)
     call comms_bcast(dis_froz_min, 1)
     call comms_bcast(dis_froz_max, 1)
+    call comms_bcast(dis_proj_min, 1)
+    call comms_bcast(dis_proj_max, 1)
     call comms_bcast(dis_num_iter, 1)
     call comms_bcast(dis_mix_ratio, 1)
     call comms_bcast(dis_conv_tol, 1)
@@ -6314,6 +6342,7 @@ contains
     call comms_bcast(lfixstep, 1)
     call comms_bcast(lsitesymmetry, 1)
     call comms_bcast(frozen_states, 1)
+    call comms_bcast(frozen_states_proj, 1)
     call comms_bcast(symmetrize_eps, 1)
 
     !vv: Constrained centres

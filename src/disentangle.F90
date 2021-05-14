@@ -26,7 +26,8 @@ module w90_disentangle
     dis_spheres_first_wann, num_kpts, nnlist, ndimwin, wb, gamma_only, &
     eigval, length_unit, dis_spheres, m_matrix, dis_conv_tol, frozen_states, &
     optimisation, recip_lattice, kpt_latt, &
-    m_matrix_orig_local, m_matrix_local
+    m_matrix_orig_local, m_matrix_local, &
+    frozen_states_proj, dis_proj_min, dis_proj_max
 
   use w90_comms, only: on_root, my_node_id, num_nodes, &
     comms_bcast, comms_array_split, &
@@ -56,6 +57,11 @@ module w90_disentangle
   !! number of bands inside outer window at nkp-th k point
   integer, allocatable   :: indxnfroz(:, :)
   !!   outer-window band index for the i-th non-frozen state
+  !! (equals 1 if it is the bottom of outer window)
+  integer, allocatable   :: indxkeep(:, :)
+  !! outer-window band index for the i-th state included in
+  !! disentanglement, i.e. frozen + non-frozen state.
+  !! To allow excluding states in the middle of outter window.
   !! (equals 1 if it is the bottom of outer window)
 
   public :: dis_main
@@ -93,7 +99,11 @@ contains
     eigval_opt = eigval
 
     ! Set up energy windows
-    call dis_windows()
+    if (frozen_states_proj) then
+      call dis_windows_proj()
+    else
+      call dis_windows()
+    end if
 
     ! Construct the unitarized projection
     call dis_project()
@@ -915,6 +925,343 @@ contains
     return
 
   end subroutine dis_windows
+
+  subroutine dis_windows_proj()
+    !==================================================================!
+    !                                                                  !
+    !! This subroutine selects the states for disentanglement and frozen
+    !! based on projectability. States with projectability < dis_proj_min
+    !! are discarded, states with projectability >= dis_proj_min are
+    !! included in the disentanglement, states with projectability
+    !! >= dis_proj_max are frozen.
+    !                                                                  !
+    !==================================================================!
+
+    implicit none
+
+    ! internal variables
+    integer :: nkp, nn, nkp2, nkp_global, ierr
+    integer :: i, j, k, l
+    real(kind=dp), allocatable :: projs(:)
+    integer, allocatable :: invindxkeep(:)
+    ! Needed to split m_matrix_orig on different nodes
+    integer, dimension(0:num_nodes - 1) :: counts
+    integer, dimension(0:num_nodes - 1) :: displs
+
+    ! OUTPUT:
+    !     ndimwin(nkp)   number of bands inside outer window at nkp-th k point
+    !     ndimfroz(nkp)  number of frozen bands at nkp-th k point
+    !     lfrozen(i,nkp) true if the i-th band inside outer window is frozen
+    !     linner         true if there is an inner window
+    !     indxfroz(i,nkp) outer-window band index for the i-th frozen state
+    !                     (equals 1 if it is the bottom of outer window.
+    !                      The indexes are reordered after excluding
+    !                      low-projectability states.)
+    !     indxnfroz(i,nkp) outer-window band index for the i-th non-frozen s
+    !                     (equals 1 if it is the bottom of outer window.
+    !                      The indexes are reordered after excluding
+    !                      low-projectability states.)
+    !     indxkeep(i,nkp) original outer-window band index for the i-th state
+    !                     included in disentanglement, i.e. frozen + non-frozen state.
+    !                     This is used to allow excluding states in the middle of
+    !                     orignal outter window, and to generate a new outter window.
+    !                     (equals 1 if it is the bottom of outer window)
+    !     nfirstwin(nkp) index of lowest band inside outer window at nkp-th
+    ! MODIFIED:
+    !     eigval_opt(nb,nkp) At input it contains a large set of eigenvalues. At
+    !                    it is slimmed down to contain only those inside the
+    !                    energy window, stored in nb=1,...,ndimwin(nkp)
+
+    if (timing_level > 1 .and. on_root) call io_stopwatch('dis: windows_proj', 1)
+
+    ! Allocate module arrays
+    allocate (nfirstwin(num_kpts), stat=ierr)
+    if (ierr /= 0) call io_error('Error in allocating nfirstwin in dis_windows_proj')
+    allocate (ndimfroz(num_kpts), stat=ierr)
+    if (ierr /= 0) call io_error('Error in allocating ndimfroz in dis_windows_proj')
+    allocate (indxfroz(num_bands, num_kpts), stat=ierr)
+    if (ierr /= 0) call io_error('Error in allocating indxfroz in dis_windows_proj')
+    allocate (indxnfroz(num_bands, num_kpts), stat=ierr)
+    if (ierr /= 0) call io_error('Error in allocating indxnfroz in dis_windows_proj')
+    allocate (lfrozen(num_bands, num_kpts), stat=ierr)
+    if (ierr /= 0) call io_error('Error in allocating lfrozen in dis_windows_proj')
+    allocate(projs(num_bands), stat=ierr)
+    if (ierr /= 0) call io_error('Error in allocating projs in dis_windows_proj')
+    allocate(indxkeep(num_bands, num_kpts), stat=ierr)
+    if (ierr /= 0) call io_error('Error in allocating indxkeep in dis_windows_proj')
+    allocate(invindxkeep(num_bands), stat=ierr)
+    if (ierr /= 0) call io_error('Error in allocating invindxkeep in dis_windows_proj')
+
+    call comms_array_split(num_kpts, counts, displs)
+
+    linner = .false.
+
+    if (on_root) write (stdout, '(1x,a)') &
+      '+----------------------------------------------------------------------------+'
+    if (on_root) write (stdout, '(1x,a)') &
+      '|                              Energy  Windows                               |'
+    if (on_root) write (stdout, '(1x,a)') &
+      '|                              ---------------                               |'
+    if (on_root) write (stdout, '(1x,a,f10.5,a,f10.5,a)') &
+      '|   Disentanglement range: ', dis_proj_min, '  to ', 1.0, &
+      '  projectability         |'
+    if (on_root) write (stdout, '(1x,a,f10.5,a,f10.5,a)') &
+      '|            Frozen range: ', dis_proj_max, '  to ', 1.0, &
+      '  projectability         |'
+    if (on_root) write (stdout, '(1x,a)') &
+      '+----------------------------------------------------------------------------+'
+
+    do nkp = 1, num_kpts
+      ! Generate the projectability array
+      projs = 0.0_dp
+      do i = 1, num_bands
+        do j = 1, num_wann
+          projs(i) = projs(i) + real(a_matrix(i, j, nkp), dp)**2 + aimag(a_matrix(i, j, nkp))**2
+        end do
+        if ((projs(i) < 0.0_dp) .or. (projs(i) > 1.0_dp)) then
+          call io_error('dis_windows_proj: projectability < 0.0 or > 1.0 ?')
+        end if
+      end do
+
+      ! Check which eigenvalues fall within the inner/outer windows
+      nfirstwin(nkp) = 1
+      indxkeep(:, nkp) = 0
+      indxfroz(:, nkp) = 0
+      indxnfroz(:, nkp) = 0
+      lfrozen(:, nkp) = .false.
+      j = 0
+      k = 0
+      l = 0
+      do i = 1, num_bands
+        if (projs(i) >= dis_proj_max) then
+          j = j + 1
+          ! Relative to bottom of outer window, however the bottom is 1
+          indxkeep(j, nkp) = i
+          k = k + 1
+          indxfroz(k, nkp) = i
+          lfrozen(indxfroz(k, nkp), nkp) = .true.
+        else if ((projs(i) >= dis_proj_min) .and. (projs(i) < dis_proj_max)) then
+          j = j + 1
+          indxkeep(j, nkp) = i
+          l = l + 1
+          indxnfroz(l, nkp) = i
+        end if
+      enddo
+      ndimwin(nkp) = j
+      ndimfroz(nkp) = k
+
+      if (j /= k + l) then
+        if (on_root) write (stdout, *) ' Error at k-point: ', nkp
+        if (on_root) write (stdout, '(3(a,i5))') ' ndimwin: ', ndimwin(nkp), &
+                ' ndimfroz: ', ndimfroz(nkp), ' ndimnfroz: ', l
+        call io_error('dis_windows_proj: (ndimfroz + ndimnfroz) /= ndimwin at k-point')
+      endif
+
+      if (ndimwin(nkp) == 0) then
+        if (on_root) write (stdout, *) ' ERROR AT K-POINT: ', nkp
+        if (on_root) write (stdout, *) ' dis_proj_min:     ', dis_proj_min
+        if (on_root) write (stdout, *) ' EIGENVALUE projectability: [', &
+                minval(projs), ',', maxval(projs), ']'
+        call io_error('dis_windows_proj: The outer energy window contains no eigenvalues'&
+                //', consider reducing dis_proj_min?')
+      end if
+
+      if (ndimwin(nkp) .lt. num_wann) then
+        if (on_root) write (stdout, '(1x,a17,i4,a8,i3,a9,i3)') 'Error at k-point ', &
+                nkp, ' ndimwin=', ndimwin(nkp), ' num_wann=', num_wann
+        call io_error('dis_windows_proj: Energy window contains fewer states than number of target WFs'&
+                //', consider reducing dis_proj_min?')
+      endif
+
+      if (ndimfroz(nkp) .gt. num_wann) then
+        if (on_root) write (stdout, 401) nkp, ndimfroz(nkp), num_wann
+401     format(' ERROR AT K-POINT ', i4, ' THERE ARE ', i2, &
+               ' BANDS INSIDE THE INNER WINDOW AND ONLY', i2, &
+               ' TARGET BANDS')
+        if (on_root) write (stdout, 402) (eigval_opt(indxfroz(i, nkp), nkp), i=1, ndimfroz(nkp))
+402     format('BANDS: (eV)', 10(F10.5, 1X))
+        call io_error('dis_windows_proj: More states in the frozen window than target WFs')
+      endif
+
+      if (ndimfroz(nkp) .gt. 0) linner = .true.
+      ! DEBUG
+      !         write(*,'(a,i4,a,i2,a,i2)') 'k point ',nkp,
+      !     &    ' lowest band in outer win is # ',imin,
+      !     &    '   # frozen states is ',ndimfroz(nkp)
+      ! ENDDEBUG
+
+      ! Slim down eigval vector at present k, i.e. remove low-projectability states
+      do i = 1, ndimwin(nkp)
+        j = indxkeep(i, nkp)
+        if (j == i) cycle
+        lfrozen(i, nkp) = lfrozen(j, nkp)
+        eigval_opt(i, nkp) = eigval_opt(j, nkp)
+      end do
+      eigval_opt(ndimwin(nkp) + 1:num_bands, nkp) = 0.0_dp
+      lfrozen(ndimwin(nkp) + 1:num_bands, nkp) = .false.
+      ! slim down a_matrix
+      if (ndimwin(nkp) .ne. num_bands) then
+        do j = 1, num_wann
+          do i = 1, ndimwin(nkp)
+            a_matrix(i, j, nkp) = a_matrix(indxkeep(i, nkp), j, nkp)
+          enddo
+          a_matrix(ndimwin(nkp) + 1:num_bands, j, nkp) = cmplx_0
+        enddo
+      endif
+      ! no need to slim u_matrix_opt, it is calculated from a_matrix in dis_project()
+      ! Reorder the indexes
+      ! find the reverse mapping
+      invindxkeep = 0
+      do i = 1, ndimwin(nkp)
+        invindxkeep(indxkeep(i, nkp)) = i
+      end do
+      do i = 1, ndimfroz(nkp)
+        j = indxfroz(i, nkp)
+        indxfroz(i, nkp) = invindxkeep(j)
+      end do
+      do i = ndimfroz(nkp)+1, num_bands
+        indxfroz(i, nkp) = 0
+      end do
+      do i = 1, ndimwin(nkp) - ndimfroz(nkp)
+        j = indxnfroz(i, nkp)
+        indxnfroz(i, nkp) = invindxkeep(j)
+      end do
+      do i = ndimwin(nkp)-ndimfroz(nkp)+1, num_bands
+        indxnfroz(i, nkp) = 0
+      end do
+
+    enddo
+    ! [k-point loop (nkp)]
+
+    ! slim down m_matrix_orig
+    if (on_root) then
+      ! this is done outside of previous do loop since we need indxkeep on nn kpoints
+      do nkp = 1, num_kpts
+        do nn = 1, nntot
+          nkp2 = nnlist(nkp, nn)
+          do j = 1, ndimwin(nkp2)
+            do i = 1, ndimwin(nkp)
+              m_matrix_orig(i, j, nn, nkp) = m_matrix_orig(&
+                      indxkeep(i, nkp), indxkeep(j, nkp2), nn, nkp)
+            end do
+          end do
+          m_matrix_orig(ndimwin(nkp)+1:num_bands, &
+                  ndimwin(nkp2)+1:num_bands, nn, nkp) = cmplx_0
+        end do
+      end do
+    endif
+    ! slim down m_matrix_orig_local
+    do nkp = 1, counts(my_node_id)
+      nkp_global = nkp + displs(my_node_id)
+      do nn = 1, nntot
+        nkp2 = nnlist(nkp_global, nn)
+        do j = 1, ndimwin(nkp2)
+          do i = 1, ndimwin(nkp_global)
+            m_matrix_orig_local(i, j, nn, nkp) = m_matrix_orig_local(&
+                    indxkeep(i, nkp_global), indxkeep(j, nkp2), nn, nkp)
+          end do
+        end do
+        m_matrix_orig_local(ndimwin(nkp_global)+1:num_bands, &
+                ndimwin(nkp2)+1:num_bands, nn, nkp) = cmplx_0
+      end do
+    end do
+
+    deallocate(projs)
+    deallocate(invindxkeep)
+
+    if (iprint > 1) then
+      if (on_root) write (stdout, '(1x,a)') &
+        '|                        K-points with Frozen States                         |'
+      if (on_root) write (stdout, '(1x,a)') &
+        '|                        ---------------------------                         |'
+      i = 0
+      do nkp = 1, num_kpts
+        if (ndimfroz(nkp) .gt. 0) then
+          i = i + 1
+          if (i .eq. 1) then
+            if (on_root) write (stdout, '(1x,a,i6)', advance='no') '|', nkp
+          else if ((i .gt. 1) .and. (i .lt. 12)) then
+            if (on_root) write (stdout, '(i6)', advance='no') nkp
+          else if (i .eq. 12) then
+            if (on_root) write (stdout, '(i6,a)') nkp, '    |'
+            i = 0
+          endif
+        endif
+      enddo
+      if (i .ne. 0) then
+        do j = 1, 12 - i
+          if (on_root) write (stdout, '(6x)', advance='no')
+        enddo
+        if (on_root) write (stdout, '(a)') '    |'
+      endif
+      if (on_root) write (stdout, '(1x,a)') &
+        '+----------------------------------------------------------------------------+'
+    endif
+
+    if (on_root) write (stdout, '(3x,a,i4)') 'Number of target bands to extract: ', num_wann
+    if (iprint > 1) then
+      if (on_root) write (stdout, '(1x,a)') &
+        '+----------------------------------------------------------------------------+'
+      if (on_root) write (stdout, '(1x,a)') &
+        '|                                  Windows                                   |'
+      if (on_root) write (stdout, '(1x,a)') &
+        '|                                  -------                                   |'
+      if (on_root) write (stdout, '(1x,a)') &
+        '|               K-point      Ndimwin     Ndimfroz    Nfirstwin               |'
+      if (on_root) write (stdout, '(1x,a)') &
+        '|               ----------------------------------------------               |'
+      do nkp = 1, num_kpts
+        if (on_root) write (stdout, 403) nkp, ndimwin(nkp), ndimfroz(nkp), nfirstwin(nkp)
+      enddo
+403   format(1x, '|', 14x, i6, 7x, i6, 7x, i6, 6x, i6, 18x, '|')
+      if (on_root) write (stdout, '(1x,a)') &
+        '+----------------------------------------------------------------------------+'
+    endif
+
+    if (iprint > 2) then
+      if (on_root) then
+        write (stdout, '(1x,a)') &
+              '+----------------------------------------------------------------------------+'
+        write (stdout, '(1x,a)') &
+              '|                         Kept bands at each K-point                         |'
+        write (stdout, '(1x,a)') &
+              '|               ----------------------------------------------               |'
+        do nkp = 1, num_kpts
+          write (stdout, '(1x,"|")', advance="no")
+          do i = 1, ndimwin(nkp)
+            write (stdout, '(1x,i0)', advance="no") indxkeep(i, nkp)
+          end do
+          write (stdout, '(1x,"|")')
+        end do
+        write (stdout, '(1x,a)') &
+              '+----------------------------------------------------------------------------+'
+      end if
+    endif
+
+    if (iprint > 2) then
+      if (on_root) then
+        write (stdout, '(1x,a)') &
+                '+----------------------------------------------------------------------------+'
+        write (stdout, '(1x,a)') &
+                '|                       Frozen bands at each K-point                         |'
+        write (stdout, '(1x,a)') &
+                '|               ----------------------------------------------               |'
+        do nkp = 1, num_kpts
+          write (stdout, '(1x,"|")', advance="no")
+          do i = 1, ndimfroz(nkp)
+            write (stdout, '(1x,i0)', advance="no") indxfroz(i, nkp)
+          end do
+          write (stdout, '(1x,"|")')
+        end do
+        write (stdout, '(1x,a)') &
+                '+----------------------------------------------------------------------------+'
+      end if
+    endif
+
+    if (timing_level > 1) call io_stopwatch('dis: windows_proj', 2)
+
+    return
+  end subroutine dis_windows_proj
 
   !==================================================================!
   subroutine dis_project()
