@@ -1026,6 +1026,11 @@ contains
           projs(i) = projs(i) + real(a_matrix(i, j, nkp), dp)**2 + aimag(a_matrix(i, j, nkp))**2
         end do
         if ((projs(i) < 0.0_dp) .or. (projs(i) > 1.0_dp)) then
+          if (on_root) write (stdout, *) ' Error at k-point: ', nkp, '  band: ', i
+          if (on_root) write (stdout, 411) (eigval_opt(j, nkp), j=1, num_bands)
+411       format('Bands (eV): ', 10(F10.5, 1X))
+          if (on_root) write (stdout, 412) (projs(j), j=1, num_bands)
+412       format('Projectability: ', 10(F10.5, 1X))
           call io_error('dis_windows_proj: projectability < 0.0 or > 1.0 ?')
         end if
       end do
@@ -1073,25 +1078,27 @@ contains
         if (on_root) write (stdout, *) ' ERROR AT K-POINT: ', nkp
         if (on_root) write (stdout, *) ' dis_proj_min:     ', dis_proj_min
         if (on_root) write (stdout, *) ' EIGENVALUE projectability: [', &
-                minval(projs), ',', maxval(projs), ']'
+                minval(projs), ', ', maxval(projs), ']'
         call io_error('dis_windows_proj: The outer energy window contains no eigenvalues'&
                 //', consider reducing dis_proj_min?')
       end if
 
       if (ndimwin(nkp) .lt. num_wann) then
         if (on_root) write (stdout, '(1x,a17,i4,a8,i3,a9,i3)') 'Error at k-point ', &
-                nkp, ' ndimwin=', ndimwin(nkp), ' num_wann=', num_wann
+                nkp, '  ndimwin=', ndimwin(nkp), '  num_wann=', num_wann
+        if (on_root) write (stdout, 411) (eigval_opt(j, nkp), j=1, num_bands)
+        if (on_root) write (stdout, 412) (projs(j), j=1, num_bands)
         call io_error('dis_windows_proj: Energy window contains fewer states than number of target WFs'&
                 //', consider reducing dis_proj_min?')
       endif
 
       if (ndimfroz(nkp) .gt. num_wann) then
-        if (on_root) write (stdout, 401) nkp, ndimfroz(nkp), num_wann
-401     format(' ERROR AT K-POINT ', i4, ' THERE ARE ', i2, &
+        if (on_root) write (stdout, 413) nkp, ndimfroz(nkp), num_wann
+413     format(' ERROR AT K-POINT ', i4, ' THERE ARE ', i2, &
                ' BANDS INSIDE THE INNER WINDOW AND ONLY', i2, &
                ' TARGET BANDS')
-        if (on_root) write (stdout, 402) (eigval_opt(indxfroz(i, nkp), nkp), i=1, ndimfroz(nkp))
-402     format('BANDS: (eV)', 10(F10.5, 1X))
+        if (on_root) write (stdout, 414) (eigval_opt(indxfroz(i, nkp), nkp), i=1, ndimfroz(nkp))
+414     format('BANDS: (eV)', 10(F10.5, 1X))
         call io_error('dis_windows_proj: More states in the frozen window than target WFs')
       endif
 
@@ -1220,9 +1227,9 @@ contains
       if (on_root) write (stdout, '(1x,a)') &
         '|               ----------------------------------------------               |'
       do nkp = 1, num_kpts
-        if (on_root) write (stdout, 403) nkp, ndimwin(nkp), ndimfroz(nkp), nfirstwin(nkp)
+        if (on_root) write (stdout, 415) nkp, ndimwin(nkp), ndimfroz(nkp), nfirstwin(nkp)
       enddo
-403   format(1x, '|', 14x, i6, 7x, i6, 7x, i6, 6x, i6, 18x, '|')
+415   format(1x, '|', 14x, i6, 7x, i6, 7x, i6, 6x, i6, 18x, '|')
       if (on_root) write (stdout, '(1x,a)') &
         '+----------------------------------------------------------------------------+'
     endif
