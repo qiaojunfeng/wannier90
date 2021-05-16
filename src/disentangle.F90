@@ -121,15 +121,18 @@ contains
     ! Debug
     call internal_check_orthonorm()
 
-    ! Slim down the original Mmn(k,b)
-    call internal_slim_m()
+    ! For frozen_states_proj, these are done inside dis_windows_proj()
+    if (.not. frozen_states_proj) then
+      ! Slim down the original Mmn(k,b)
+      call internal_slim_m()
 
-    lwindow = .false.
-    do nkp = 1, num_kpts
-      do j = nfirstwin(nkp), nfirstwin(nkp) + ndimwin(nkp) - 1
-        lwindow(j, nkp) = .true.
+      lwindow = .false.
+      do nkp = 1, num_kpts
+        do j = nfirstwin(nkp), nfirstwin(nkp) + ndimwin(nkp) - 1
+          lwindow(j, nkp) = .true.
+        end do
       end do
-    end do
+    end if
 
     if (lsitesymmetry) call sitesym_slim_d_matrix_band(lwindow)                         !RS: calculate initial U_{opt}(Rk) from U_{opt}(k)
     if (lsitesymmetry) call sitesym_symmetrize_u_matrix(num_bands, u_matrix_opt, lwindow) !RS:
@@ -613,6 +616,10 @@ contains
       if (ierr /= 0) call io_error('Error deallocating ndimfroz in dis_main')
       deallocate (nfirstwin, stat=ierr)
       if (ierr /= 0) call io_error('Error deallocating nfirstwin in dis_main')
+      if (frozen_states_proj) then
+        deallocate (indxkeep, stat=ierr)
+        if (ierr /= 0) call io_error('Error deallocating indxkeep in dis_main')
+      end if
 
       ! Module arrays allocated in dis_main
       deallocate (eigval_opt, stat=ierr)
@@ -1029,22 +1036,27 @@ contains
       indxfroz(:, nkp) = 0
       indxnfroz(:, nkp) = 0
       lfrozen(:, nkp) = .false.
-      j = 0
-      k = 0
-      l = 0
+      lwindow(:, nkp) = .false.
+      j = 0 ! counter for all keep states
+      k = 0 ! counter for frozen states
+      l = 0 ! counter for non-frozen states
       do i = 1, num_bands
         if (projs(i) >= dis_proj_max) then
           j = j + 1
-          ! Relative to bottom of outer window, however the bottom is 1
+          ! Inside outer window, relative to bottom of outer window, however the bottom is 1
           indxkeep(j, nkp) = i
           k = k + 1
           indxfroz(k, nkp) = i
-          lfrozen(indxfroz(k, nkp), nkp) = .true.
+          lfrozen(j, nkp) = .true.
+          ! Relative to the total num_bands
+          lwindow(i, nkp) = .true.
         else if ((projs(i) >= dis_proj_min) .and. (projs(i) < dis_proj_max)) then
           j = j + 1
           indxkeep(j, nkp) = i
           l = l + 1
           indxnfroz(l, nkp) = i
+          ! Relative to the total num_bands
+          lwindow(i, nkp) = .true.
         end if
       enddo
       ndimwin(nkp) = j
@@ -1094,11 +1106,9 @@ contains
       do i = 1, ndimwin(nkp)
         j = indxkeep(i, nkp)
         if (j == i) cycle
-        lfrozen(i, nkp) = lfrozen(j, nkp)
         eigval_opt(i, nkp) = eigval_opt(j, nkp)
       end do
       eigval_opt(ndimwin(nkp) + 1:num_bands, nkp) = 0.0_dp
-      lfrozen(ndimwin(nkp) + 1:num_bands, nkp) = .false.
       ! slim down a_matrix
       if (ndimwin(nkp) .ne. num_bands) then
         do j = 1, num_wann
@@ -1108,27 +1118,26 @@ contains
           a_matrix(ndimwin(nkp) + 1:num_bands, j, nkp) = cmplx_0
         enddo
       endif
-      ! no need to slim u_matrix_opt, it is calculated from a_matrix in dis_project()
-      ! Reorder the indexes
-      ! find the reverse mapping
+      ! No need to slim u_matrix_opt, it is calculated from a_matrix in dis_project()
+      ! Find the reverse mapping
       invindxkeep = 0
       do i = 1, ndimwin(nkp)
         invindxkeep(indxkeep(i, nkp)) = i
       end do
+      ! Reorder the indexes, to remove low-projectability states (which are excluded
+      ! from disentanglement) that are in the middle of high-projectability states
+      ! (which are included in disentanglement). So now these indexes are for the
+      ! slimmed matrices, instead of the original num_bands-sized matrices.
       do i = 1, ndimfroz(nkp)
         j = indxfroz(i, nkp)
         indxfroz(i, nkp) = invindxkeep(j)
       end do
-      do i = ndimfroz(nkp)+1, num_bands
-        indxfroz(i, nkp) = 0
-      end do
+      indxfroz((ndimfroz(nkp)+1):num_bands, nkp) = 0
       do i = 1, ndimwin(nkp) - ndimfroz(nkp)
         j = indxnfroz(i, nkp)
         indxnfroz(i, nkp) = invindxkeep(j)
       end do
-      do i = ndimwin(nkp)-ndimfroz(nkp)+1, num_bands
-        indxnfroz(i, nkp) = 0
-      end do
+      indxnfroz((ndimwin(nkp)-ndimfroz(nkp)+1):num_bands, nkp) = 0
 
     enddo
     ! [k-point loop (nkp)]
