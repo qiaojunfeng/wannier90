@@ -1010,6 +1010,14 @@ contains
     if (on_root) write (stdout, '(1x,a)') &
       '|                              ---------------                               |'
     if (on_root) write (stdout, '(1x,a,f10.5,a,f10.5,a)') &
+            '|                   Outer: ', dis_win_min, '  to ', dis_win_max, &
+            '  (eV)                   |'
+    if (on_root .and. frozen_states) then
+      write (stdout, '(1x,a,f10.5,a,f10.5,a)') &
+            '|                   Inner: ', dis_froz_min, '  to ', dis_froz_max, &
+            '  (eV)                   |'
+    end if
+    if (on_root) write (stdout, '(1x,a,f10.5,a,f10.5,a)') &
       '|   Disentanglement range: ', dis_proj_min, '  to ', 1.0, &
       '  projectability         |'
     if (on_root) write (stdout, '(1x,a,f10.5,a,f10.5,a)') &
@@ -1046,7 +1054,13 @@ contains
       k = 0 ! counter for frozen states
       l = 0 ! counter for non-frozen states
       do i = 1, num_bands
-        if (projs(i) >= dis_proj_max) then
+        ! exclude states outside disentanglement energy window
+        if ((eigval_opt(i, nkp) < dis_win_min) .or. &
+            (eigval_opt(i, nkp) > dis_win_max)) cycle
+        ! freeze high-proj states + states inside frozen window, i.e. their union
+        if ((projs(i) >= dis_proj_max) .or. &
+            (frozen_states .and. ((eigval_opt(i, nkp) >= dis_froz_min) &
+             .and. (eigval_opt(i, nkp) <= dis_froz_max))) ) then
           j = j + 1
           ! Inside outer window, relative to bottom of outer window, however the bottom is 1
           indxkeep(j, nkp) = i
@@ -1080,7 +1094,7 @@ contains
         if (on_root) write (stdout, *) ' EIGENVALUE projectability: [', &
                 minval(projs), ', ', maxval(projs), ']'
         call io_error('dis_windows_proj: The outer energy window contains no eigenvalues'&
-                //', consider reducing dis_proj_min?')
+                //', consider reducing dis_proj_min/increasing dis_win_max?')
       end if
 
       if (ndimwin(nkp) .lt. num_wann) then
@@ -1089,7 +1103,7 @@ contains
         if (on_root) write (stdout, 411) (eigval_opt(j, nkp), j=1, num_bands)
         if (on_root) write (stdout, 412) (projs(j), j=1, num_bands)
         call io_error('dis_windows_proj: Energy window contains fewer states than number of target WFs'&
-                //', consider reducing dis_proj_min?')
+                //', consider reducing dis_proj_min/increasing dis_win_max?')
       endif
 
       if (ndimfroz(nkp) .gt. num_wann) then

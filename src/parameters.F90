@@ -1710,16 +1710,12 @@ contains
     if (found) then
       if ((dis_proj_min < 0.0_dp) .or. (dis_proj_min > 1.0_dp)) &
         call io_error('Error: param_read: dis_proj_min < 0.0 or > 1.0')
-      if (frozen_states) &
-        call io_error('Error: param_read: can only use either dis_froz_min/max or dis_proj_min/max')
       frozen_states_proj = .true.
     end if
     call param_get_keyword('dis_proj_max', found2, r_value=dis_proj_max)
     if (found2) then
       if ((dis_proj_max < 0.0_dp) .or. (dis_proj_max > 1.0_dp)) &
         call io_error('Error: param_read: dis_proj_max < 0.0 or > 1.0')
-      if (frozen_states) &
-        call io_error('Error: param_read: can only use either dis_froz_min/max or dis_proj_min/max')
       frozen_states_proj = .true.
     endif
     if (dis_proj_max .lt. dis_proj_min) &
