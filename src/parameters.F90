@@ -117,6 +117,9 @@ module w90_parameters
   !! lower threshold of disentanglement based on projectability, lower are discarded
   real(kind=dp), public, save :: dis_proj_max
   !! upper threshold of disentanglement based on projectability, higher are frozen
+  integer, public, save :: dis_proj_num_nonfroz
+  !! for proj-disentanglement, specify the number of highest eigvalues that won't be frozen,
+  !! to ensure there are enough freedom to construct a smooth manifold
   integer, public, save :: num_iter
   !! Number of wannierisation iterations
   integer, public, save :: num_cg_steps
@@ -1720,6 +1723,11 @@ contains
     endif
     if (dis_proj_max .lt. dis_proj_min) &
       call io_error('Error: param_read: dis_proj_max is smaller than dis_proj_min')
+
+    dis_proj_num_nonfroz = 0
+    call param_get_keyword('dis_proj_num_nonfroz', found, i_value=dis_proj_num_nonfroz)
+    if (dis_proj_num_nonfroz < 0) call io_error('Error: dis_proj_num_nonfroz must be positive')
+    if (dis_proj_num_nonfroz > num_wann) call io_error('Error: dis_proj_num_nonfroz must <= num_wann')
 
     dis_num_iter = 200
     call param_get_keyword('dis_num_iter', found, i_value=dis_num_iter)
@@ -6154,6 +6162,7 @@ contains
     call comms_bcast(dis_froz_max, 1)
     call comms_bcast(dis_proj_min, 1)
     call comms_bcast(dis_proj_max, 1)
+    call comms_bcast(dis_proj_num_nonfroz, 1)
     call comms_bcast(dis_num_iter, 1)
     call comms_bcast(dis_mix_ratio, 1)
     call comms_bcast(dis_conv_tol, 1)
