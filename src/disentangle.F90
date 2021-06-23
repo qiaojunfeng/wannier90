@@ -1058,18 +1058,26 @@ contains
         if ((eigval_opt(i, nkp) < dis_win_min) .or. &
             (eigval_opt(i, nkp) > dis_win_max)) cycle
         ! freeze high-proj states + states inside frozen window, i.e. their union
-        if ((k < (num_wann-dis_proj_num_nonfroz)) .and. &
-            ((projs(i) >= dis_proj_max) .or. &
+        if ((projs(i) >= dis_proj_max) .or. &
             (frozen_states .and. ((eigval_opt(i, nkp) >= dis_froz_min) &
-             .and. (eigval_opt(i, nkp) <= dis_froz_max) )) )) then
-          j = j + 1
-          ! Inside outer window, relative to bottom of outer window, however the bottom is 1
-          indxkeep(j, nkp) = i
-          k = k + 1
-          indxfroz(k, nkp) = i
-          lfrozen(j, nkp) = .true.
-          ! Relative to the total num_bands
-          lwindow(i, nkp) = .true.
+             .and. (eigval_opt(i, nkp) <= dis_froz_max) )) ) then
+          if (k < (num_wann-dis_proj_num_nonfroz)) then
+            j = j + 1
+            ! Inside outer window, relative to bottom of outer window, however the bottom is 1
+            indxkeep(j, nkp) = i
+            k = k + 1
+            indxfroz(k, nkp) = i
+            lfrozen(j, nkp) = .true.
+            ! Relative to the total num_bands
+            lwindow(i, nkp) = .true.
+          else
+            j = j + 1
+            indxkeep(j, nkp) = i
+            l = l + 1
+            indxnfroz(l, nkp) = i
+            ! Relative to the total num_bands
+            lwindow(i, nkp) = .true.
+          end if
         else if ((projs(i) >= dis_proj_min) .and. (projs(i) < dis_proj_max)) then
           j = j + 1
           indxkeep(j, nkp) = i
