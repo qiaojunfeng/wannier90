@@ -103,7 +103,7 @@ contains
       kubo_adpt_smr_max, kubo_smr_fixed_en_width, &
       scissors_shift, num_valence_bands, &
       shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift, shc_method, &
-      kdotp_kpoint, kdotp_num_bands, kdotp_bands
+      kdotp_kpoint, kdotp_num_bands, kdotp_bands, kdotp_spin
     use w90_get_oper, only: get_HH_R, get_AA_R, get_BB_R, get_CC_R, &
       get_SS_R, get_SHC_R, get_SAA_R, get_SBB_R
 
@@ -125,6 +125,7 @@ contains
     real(kind=dp), allocatable :: sc_list(:, :, :)
     ! kdotp
     complex(kind=dp), allocatable :: kdotp(:, :, :, :, :)
+    complex(kind=dp), allocatable :: kdotp_spn(:, :, :, :, :)
     ! Complex optical conductivity, dividided into Hermitean and
     ! anti-Hermitean parts
     !
@@ -281,6 +282,10 @@ contains
       call get_HH_R
       allocate (kdotp(kdotp_num_bands, kdotp_num_bands, 3, 3, 3))
       kdotp = cmplx_0
+      if (kdotp_spin) then
+        call get_SS_R
+        allocate (kdotp_spn(kdotp_num_bands, kdotp_num_bands, 3, 3, 3))
+      endif
     endif
 
     if (on_root) then
@@ -344,7 +349,11 @@ contains
     end if !on_root
 
     if (eval_kdotp) then
-      call berry_get_kdotp(kdotp)
+      if (kdotp_spin) then
+        call berry_get_kdotp(kdotp, kdotp_spn)
+      else
+        call berry_get_kdotp(kdotp)
+      endif
     end if
 
     ! Set up adaptive refinement mesh
@@ -1223,6 +1232,37 @@ contains
           end do
         end do
         close (file_unit)
+
+        if (kdotp_spin) then
+          ! zeroth order in k
+          file_name = trim(seedname)//'-kdotp_spn_0.dat'
+          file_name = trim(file_name)
+          file_unit = io_file_unit()
+          write (stdout, '(/,3x,a)') '* '//file_name
+          open (file_unit, FILE=file_name, STATUS='UNKNOWN', FORM='FORMATTED')
+          write (file_unit, '(2E18.8E3)') kdotp_spn(:, :, 1, 1, 1)
+          close (file_unit)
+
+          ! first order in k
+          file_name = trim(seedname)//'-kdotp_spn_1.dat'
+          write (stdout, '(/,3x,a)') '* '//file_name
+          open (file_unit, FILE=file_name, STATUS='UNKNOWN', FORM='FORMATTED')
+          do i = 1, 3
+            write (file_unit, '(2E18.8E3)') kdotp_spn(:, :, 2, i, 1)
+          end do
+          close (file_unit)
+
+          ! second order in k
+          file_name = trim(seedname)//'-kdotp_spn_2.dat'
+          write (stdout, '(/,3x,a)') '* '//file_name
+          open (file_unit, FILE=file_name, STATUS='UNKNOWN', FORM='FORMATTED')
+          do i = 1, 3
+            do j = 1, 3
+              write (file_unit, '(2E18.8E3)') kdotp_spn(:, :, 3, i, j)
+            end do
+          end do
+          close (file_unit)
+        endif
 
       end if
 
@@ -2223,7 +2263,7 @@ contains
 
   end subroutine berry_print_progress
 
-  subroutine berry_get_kdotp(kdotp)
+  subroutine berry_get_kdotp(kdotp, kdotp_spn)
     !====================================================================!
     !  Extracts k.p expansion coefficients using quasi-degenerate
     !  (Lowdin) perturbation theory, adapted to the Wannier formalism,
@@ -2233,13 +2273,15 @@ contains
     ! Arguments
     !
     use w90_constants, only: dp, cmplx_0, cmplx_i
-    use w90_parameters, only: num_wann, kdotp_kpoint, kdotp_num_bands, kdotp_bands
+    use w90_parameters, only: num_wann, kdotp_kpoint, kdotp_num_bands, kdotp_bands, kdotp_spin
     use w90_wan_ham, only: wham_get_D_h, wham_get_eig_UU_HH_AA_sc, wham_get_eig_deleig, &
-      wham_get_D_h_P_value
+      wham_get_D_h_P_value, wham_get_deleig_a
     use w90_utility, only: utility_rotate
+    use w90_postw90_common, only: pw90common_fourier_R_to_k_new_second_d
     ! Arguments
     !
     complex(kind=dp), intent(out), dimension(:, :, :, :, :)     :: kdotp
+    complex(kind=dp), optional, intent(out), dimension(:, :, :, :, :, 3) :: kdotp_spn
 
     complex(kind=dp), allocatable :: UU(:, :)
     complex(kind=dp), allocatable :: HH_da(:, :, :), HH_da_bar(:, :, :)
@@ -2248,6 +2290,12 @@ contains
     real(kind=dp), allocatable    :: eig(:)
     real(kind=dp), allocatable    :: eig_da(:, :)
     complex(kind=dp), allocatable :: D_h(:, :, :)
+
+    complex(kind=dp), allocatable :: SS_da(:, :, :), SS_da_bar(:, :, :)
+    complex(kind=dp), allocatable :: SS_dadb(:, :, :, :), SS_dadb_bar(:, :, :, :)
+    complex(kind=dp), allocatable :: SS(:, :), SS_bar(:, :)
+    real(kind=dp), allocatable    :: spn(:)
+    real(kind=dp), allocatable    :: spn_da(:, :)
 
     real(kind=dp)                 :: DeltaE_n, DeltaE_m
     integer                       :: i, if, a, b, c, bc, n, m, r, ifreq, istart, iend
@@ -2263,6 +2311,18 @@ contains
     allocate (eig_da(num_wann, 3))
     allocate (D_h(num_wann, num_wann, 3))
 
+    if (present(kdotp_spn)) then
+      ! last index is spin
+      allocate (SS_da(num_wann, num_wann, 3, 3))
+      allocate (SS_da_bar(num_wann, num_wann, 3, 3))
+      allocate (SS_dadb(num_wann, num_wann, 3, 3, 3))
+      allocate (SS_dadb_bar(num_wann, num_wann, 3, 3, 3))
+      allocate (SS(num_wann, num_wann, 3))
+      allocate (SS_bar(num_wann, num_wann, 3))
+      allocate (spn(num_wann, 3))
+      allocate (spn_da(num_wann, 3, 3))
+    endif
+
     ! Gather W-gauge matrix objects !
 
     ! get Hamiltonian and its first and second derivatives
@@ -2271,6 +2331,22 @@ contains
     call wham_get_eig_deleig(kdotp_kpoint, eig, eig_da, HH, HH_da, UU)
     ! get D_h (Eq. (24) WYSV06)
     call wham_get_D_h_P_value(HH_da, UU, eig, D_h)
+
+    if (present(kdotp_spn)) then
+      do i = 1, 3
+        ! get spin operator and its first and second derivatives
+        call pw90common_fourier_R_to_k_new_second_d(kdotp_kpoint, &
+                                                    SS_R(:, :, :, i), &
+                                                    OO=SS(:, :, i), &
+                                                    OO_da=SS_da(:, :, :, i), &
+                                                    OO_dadb=SS_dadb(:, :, :, :, i))
+        spn(:, i) = real(utility_rotate_diag(SS(:, :, i), UU, num_wann), dp)
+        ! get spin eigenvalues and their k-derivatives
+        call wham_get_deleig_a(spn_da(:, 1, i), spn(:, i), SS_da(:, :, 1, i), UU)
+        call wham_get_deleig_a(spn_da(:, 2, i), spn(:, i), SS_da(:, :, 2, i), UU)
+        call wham_get_deleig_a(spn_da(:, 3, i), spn(:, i), SS_da(:, :, 3, i), UU)
+      enddo
+    endif
 
     ! rotate quantities from W to H gauge
     HH_bar(:, :) = utility_rotate(HH(:, :), UU, num_wann)
@@ -2282,6 +2358,20 @@ contains
         HH_dadb_bar(:, :, a, b) = utility_rotate(HH_dadb(:, :, a, b), UU, num_wann)
       enddo
     enddo
+
+    if (present(kdotp_spn)) then
+      do i = 1, 3
+        SS_bar(:, :, i) = utility_rotate(SS(:, :, i), UU, num_wann)
+        do a = 1, 3
+          ! first derivative of spin dS_da
+          SS_da_bar(:, :, a, i) = utility_rotate(SS_da(:, :, a, i), UU, num_wann)
+          do b = 1, 3
+            ! second derivative of spin d^{2}S_dadb
+            SS_dadb_bar(:, :, a, b, i) = utility_rotate(SS_dadb(:, :, a, b, i), UU, num_wann)
+          enddo
+        enddo
+      enddo
+    endif
 
     ! loop on initial and final bands in k.p set (subset A in IAdJS19)
     do n = 1, kdotp_num_bands
@@ -2319,6 +2409,46 @@ contains
 
       enddo ! bands
     enddo ! bands
+
+    if (present(kdotp_spn)) then
+      do i = 1, 3
+        do n = 1, kdotp_num_bands
+          do m = 1, kdotp_num_bands
+
+            ! zeroth order term
+            if (n == m) kdotp_spn(n, m, 1, 1, 1, i) = spn(kdotp_bands(n), i)
+            ! first order term
+            do a = 1, 3
+              kdotp_spn(n, m, 2, a, 1, i) = SS_da_bar(kdotp_bands(n), kdotp_bands(m), a, i)
+            end do
+            ! second order term
+            do a = 1, 3
+              do b = 1, 3
+                ! add contribution independent of other states
+                kdotp_spn(n, m, 3, a, b, i) = 0.5*(SS_dadb_bar(kdotp_bands(n), kdotp_bands(m), a, b, i))
+
+                ! add contribution dependent on other states (subset B in IAdJS19)
+                do r = 1, num_wann
+
+                  ! cycle for bands in the k.p set (subset A)
+                  break_loop = .false.
+                  do i = 1, kdotp_num_bands
+                    if (r == kdotp_bands(i)) break_loop = .true.
+                  end do
+                  if (break_loop) cycle
+
+                  kdotp_spn(n, m, 3, a, b, i) = kdotp_spn(n, m, 3, a, b, i) + &
+                                                0.5*SS_da_bar(kdotp_bands(n), r, a, i)*SS_da_bar(r, kdotp_bands(m), b, i) &
+                                                *((eig(kdotp_bands(n)) - eig(r))**(-1) + (eig(kdotp_bands(m)) - eig(r))**(-1))
+
+                end do
+              end do
+            end do
+
+          enddo ! bands
+        enddo ! bands
+      enddo
+    endif
 
   end subroutine berry_get_kdotp
 

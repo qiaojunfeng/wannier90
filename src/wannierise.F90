@@ -2328,7 +2328,8 @@ contains
     open (xyz_unit, file=trim(seedname)//'_centres.xyz', form='formatted')
     write (xyz_unit, '(i6)') num_wann + num_atoms
     call io_date(cdate, ctime)
-    write (xyz_unit, *) 'Wannier centres, written by Wannier90 on'//cdate//' at '//ctime
+    write (xyz_unit, 889) ((real_lattice(ind, iw), iw=1, 3), ind=1, 3), &
+      'Wannier centres, written by Wannier90 on'//cdate//' at '//ctime
     do iw = 1, num_wann
       write (xyz_unit, '("X",6x,3(f14.8,3x))') (wc(ind, iw), ind=1, 3)
     end do
@@ -2344,6 +2345,7 @@ contains
     return
 
 888 format(2x, 'WF centre', i5, 2x, '(', f10.6, ',', f10.6, ',', f10.6, ' )')
+889 format('Lattice="', 9(f14.8, 1x), '" Properties="species:S:1:pos:R:3" pbc="T T T" comment="', a, '"')
 
   end subroutine wann_write_xyz
 

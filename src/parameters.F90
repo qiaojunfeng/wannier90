@@ -216,6 +216,7 @@ module w90_parameters
   real(kind=dp), public, save :: kdotp_kpoint(3)
   integer, public, save :: kdotp_num_bands
   integer, allocatable, public, save :: kdotp_bands(:)
+  logical, public, save :: kdotp_spin
 
   ! spin Hall conductivity
   logical, public, save :: shc_freq_scan
@@ -2043,6 +2044,9 @@ contains
         call io_error('Error: kdotp_bands must contain positive numbers')
     end if
 
+    kdotp_spin = .false.
+    call param_get_keyword('kdotp_spin', found, l_value=kdotp_spin)
+
     use_bloch_phases = .false.
     call param_get_keyword('use_bloch_phases', found, l_value=use_bloch_phases)
     if (disentanglement .and. use_bloch_phases) &
@@ -3291,6 +3295,7 @@ contains
         write (stdout, '(1x,a46,10x,i4,13x,a1)') '|  kdotp_num_bands                             :', kdotp_num_bands, '|'
         write (stdout, '(1x,a46,10x,*(i4))') '|  kdotp_bands                                 :', &
           (kdotp_bands(i), i=1, kdotp_num_bands)
+        write (stdout, '(1x,a46,10x,l8,13x,a1)') '|  kdotp_spin                                  :', kdotp_spin, '|'
       end if
       if (kubo_adpt_smr .eqv. adpt_smr .and. kubo_adpt_smr_fac == adpt_smr_fac .and. kubo_adpt_smr_max == adpt_smr_max &
           .and. kubo_smr_fixed_en_width == smr_fixed_en_width .and. smr_index == kubo_smr_index) then
