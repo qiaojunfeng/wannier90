@@ -117,6 +117,9 @@ module w90_parameters
   !! lower threshold of disentanglement based on projectability, lower are discarded
   real(kind=dp), public, save :: dis_proj_max
   !! upper threshold of disentanglement based on projectability, higher are frozen
+  real(kind=dp), public, save :: dis_proj_emax
+  !! maximum frozen energy for projectability disentanglement, even if above `dis_proj_emax`
+  !! there are states having projectability >= dis_proj_max, these states are still discarded.
   integer, public, save :: dis_proj_num_nonfroz
   !! for proj-disentanglement, specify the number of highest eigvalues that won't be frozen,
   !! to ensure there are enough freedom to construct a smooth manifold
@@ -1729,8 +1732,15 @@ contains
         call io_error('Error: param_read: dis_proj_max < 0.0 or > 1.0')
       frozen_states_proj = .true.
     endif
-    if (dis_proj_max .lt. dis_proj_min) &
+    if (dis_proj_max < dis_proj_min) &
       call io_error('Error: param_read: dis_proj_max is smaller than dis_proj_min')
+
+    dis_proj_emax = 0.0_dp
+    ! For safety default is a bit higher than max eigval
+    if (eig_found) dis_proj_emax = maxval(eigval) + 0.1_dp
+    call param_get_keyword('dis_proj_emax', found, r_value=dis_proj_emax)
+    if (eig_found .and. (dis_proj_emax < dis_froz_max)) &
+      call io_error('Error: param_read: dis_proj_emax is smaller than dis_froz_max')
 
     dis_proj_num_nonfroz = 0
     call param_get_keyword('dis_proj_num_nonfroz', found, i_value=dis_proj_num_nonfroz)
@@ -6170,6 +6180,7 @@ contains
     call comms_bcast(dis_froz_max, 1)
     call comms_bcast(dis_proj_min, 1)
     call comms_bcast(dis_proj_max, 1)
+    call comms_bcast(dis_proj_emax, 1)
     call comms_bcast(dis_proj_num_nonfroz, 1)
     call comms_bcast(dis_num_iter, 1)
     call comms_bcast(dis_mix_ratio, 1)

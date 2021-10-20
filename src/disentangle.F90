@@ -27,7 +27,8 @@ module w90_disentangle
     eigval, length_unit, dis_spheres, m_matrix, dis_conv_tol, frozen_states, &
     optimisation, recip_lattice, kpt_latt, &
     m_matrix_orig_local, m_matrix_local, &
-    frozen_states_proj, dis_proj_min, dis_proj_max, dis_proj_num_nonfroz
+    frozen_states_proj, dis_proj_min, dis_proj_max, dis_proj_emax, &
+    dis_proj_num_nonfroz
 
   use w90_comms, only: on_root, my_node_id, num_nodes, &
     comms_bcast, comms_array_split, &
@@ -1025,6 +1026,9 @@ contains
     if (on_root) write (stdout, '(1x,a,f10.5,a,f10.5,a)') &
       '|            Frozen range: ', dis_proj_max, '  to ', 1.0, &
       '  projectability         |'
+    if (on_root) write (stdout, '(1x,a,f10.5,a)') &
+      '|    Frozen cutoff energy: ', dis_proj_emax, &
+      '  (eV)                                  |'
     if (on_root) write (stdout, '(1x,a)') &
       '+----------------------------------------------------------------------------+'
 
@@ -1060,8 +1064,8 @@ contains
         if ((eigval_opt(i, nkp) < dis_win_min) .or. &
             (eigval_opt(i, nkp) > dis_win_max)) cycle
         ! freeze high-proj states + states inside frozen window, i.e. their union
-        if ((projs(i) >= dis_proj_max) .or. &
-            (frozen_states .and. ((eigval_opt(i, nkp) >= dis_froz_min) &
+        if (((projs(i) >= dis_proj_max) .and. (eigval_opt(i, nkp) <= dis_proj_emax)) &
+             .or. (frozen_states .and. ((eigval_opt(i, nkp) >= dis_froz_min) &
              .and. (eigval_opt(i, nkp) <= dis_froz_max) )) ) then
           if (k < (num_wann-dis_proj_num_nonfroz)) then
             j = j + 1
@@ -1080,7 +1084,8 @@ contains
             ! Relative to the total num_bands
             lwindow(i, nkp) = .true.
           end if
-        else if ((projs(i) >= dis_proj_min) .and. (projs(i) < dis_proj_max)) then
+        else if (((projs(i) >= dis_proj_min) .and. (projs(i) < dis_proj_max)) .or. &
+          ((projs(i) >= dis_proj_max) .and. (eigval_opt(i, nkp) > dis_proj_emax))) then
           j = j + 1
           indxkeep(j, nkp) = i
           l = l + 1
