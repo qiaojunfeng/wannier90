@@ -34,6 +34,10 @@ module w90_io
   !! Are we in post processing mode
   character(len=10), public, parameter:: w90_version = '3.1.0 '
   !! Label for this version of wannier90
+  integer, public, parameter :: header_len = 60
+  !! The length of header in amn/mmn/... files
+  !! In Fortran unformatted stream IO, the length of character
+  !! must be the same during reading and writing.
 
   type timing_data
     !! Data about each stopwatch - for timing routines

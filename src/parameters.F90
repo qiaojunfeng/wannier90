@@ -30,6 +30,12 @@ module w90_parameters
   !! Units for energy
   character(len=20), public, save :: length_unit
   !! Units for length
+  logical, public, save :: amn_formatted
+  !! Read the amn from fortran formatted file
+  logical, public, save :: mmn_formatted
+  !! Read the mmn from fortran formatted file
+  logical, public, save :: eig_formatted
+  !! Read the eig from fortran formatted file
   logical, public, save :: wvfn_formatted
   !! Read the wvfn from fortran formatted file
   logical, public, save :: spn_formatted
@@ -620,6 +626,15 @@ contains
     if (length_unit .ne. 'ang' .and. length_unit .ne. 'bohr') &
       call io_error('Error: value of length_unit not recognised in param_read')
     if (length_unit .eq. 'bohr') lenconfac = 1.0_dp/bohr
+
+    amn_formatted = .true.       ! formatted or "binary" file
+    call param_get_keyword('amn_formatted', found, l_value=amn_formatted)
+
+    mmn_formatted = .true.       ! formatted or "binary" file
+    call param_get_keyword('mmn_formatted', found, l_value=mmn_formatted)
+
+    eig_formatted = .true.       ! formatted or "binary" file
+    call param_get_keyword('eig_formatted', found, l_value=eig_formatted)
 
     wvfn_formatted = .false.       ! formatted or "binary" file
     call param_get_keyword('wvfn_formatted', found, l_value=wvfn_formatted)
@@ -1665,10 +1680,18 @@ contains
           if (ierr /= 0) call io_error('Error allocating eigval in param_read')
 
           eig_unit = io_file_unit()
-          open (unit=eig_unit, file=trim(seedname)//'.eig', form='formatted', status='old', err=105)
+          if (eig_formatted) then
+            open (unit=eig_unit, file=trim(seedname)//'.eig', form='formatted', status='old', err=105)
+          else
+            open (unit=eig_unit, file=trim(seedname)//'.eig', form='unformatted', access='stream', status='old', err=105)
+          end if
           do k = 1, num_kpts
             do n = 1, num_bands
-              read (eig_unit, *, err=106, end=106) i, j, eigval(n, k)
+              if (eig_formatted) then
+                read (eig_unit, *, err=106, end=106) i, j, eigval(n, k)
+              else
+                read (eig_unit, err=106, end=106) i, j, eigval(n, k)
+              end if
               if ((i .ne. n) .or. (j .ne. k)) then
                 write (stdout, '(a)') 'Found a mismatch in '//trim(seedname)//'.eig'
                 write (stdout, '(a,i0,a,i0)') 'Wanted band  : ', n, ' found band  : ', i
@@ -6130,6 +6153,9 @@ contains
     call comms_bcast(iprint, 1)
     call comms_bcast(energy_unit, 1)
     call comms_bcast(length_unit, 1)
+    call comms_bcast(amn_formatted, 1)
+    call comms_bcast(mmn_formatted, 1)
+    call comms_bcast(eig_formatted, 1)
     call comms_bcast(wvfn_formatted, 1)
     call comms_bcast(spn_formatted, 1)
     call comms_bcast(uHu_formatted, 1)

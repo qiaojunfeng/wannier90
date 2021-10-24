@@ -100,8 +100,8 @@ contains
       num_proj, lselproj, proj2wann_map, &
       devel_flag, u_matrix, m_matrix, a_matrix, timing_level, &
       m_matrix_orig, u_matrix_opt, cp_pp, use_bloch_phases, gamma_only, & ![ysl]
-      m_matrix_local, m_matrix_orig_local, lhasproj
-    use w90_io, only: io_file_unit, io_error, seedname, io_stopwatch
+      m_matrix_local, m_matrix_orig_local, lhasproj, amn_formatted, mmn_formatted
+    use w90_io, only: io_file_unit, io_error, seedname, io_stopwatch, header_len
     use w90_comms, only: my_node_id, num_nodes, &
       comms_array_split, comms_scatterv
 
@@ -113,7 +113,7 @@ contains
     integer :: nb_tmp, nkp_tmp, nntot_tmp, np_tmp, ierr
     real(kind=dp) :: m_real, m_imag, a_real, a_imag, mu_tmp, sigma_tmp
     complex(kind=dp), allocatable :: mmn_tmp(:, :)
-    character(len=50) :: dummy
+    character(len=header_len) :: dummy
     logical :: nn_found
     ! Needed to split an array on different nodes
     integer, dimension(0:num_nodes - 1) :: counts
@@ -136,17 +136,30 @@ contains
 
       ! Read M_matrix_orig from file
       mmn_in = io_file_unit()
-      open (unit=mmn_in, file=trim(seedname)//'.mmn', &
-            form='formatted', status='old', action='read', err=101)
+      if (mmn_formatted) then
+        open (unit=mmn_in, file=trim(seedname)//'.mmn', &
+              form='formatted', status='old', action='read', err=101)
+      else
+        open (unit=mmn_in, file=trim(seedname)//'.mmn', &
+              form='unformatted', access='stream', status='old', action='read', err=101)
+      end if
 
       if (on_root) write (stdout, '(/a)', advance='no') ' Reading overlaps from '//trim(seedname)//'.mmn    : '
 
       ! Read the comment line
-      read (mmn_in, '(a)', err=103, end=103) dummy
+      if (mmn_formatted) then
+        read (mmn_in, '(a)', err=103, end=103) dummy
+      else
+        read (mmn_in, err=103, end=103) dummy
+      end if
       if (on_root) write (stdout, '(a)') trim(dummy)
 
       ! Read the number of bands, k-points and nearest neighbours
-      read (mmn_in, *, err=103, end=103) nb_tmp, nkp_tmp, nntot_tmp
+      if (mmn_formatted) then
+        read (mmn_in, *, err=103, end=103) nb_tmp, nkp_tmp, nntot_tmp
+      else
+        read (mmn_in, err=103, end=103) nb_tmp, nkp_tmp, nntot_tmp
+      end if
 
       ! Checks
       if (nb_tmp .ne. num_bands) &
@@ -161,13 +174,23 @@ contains
       allocate (mmn_tmp(num_bands, num_bands), stat=ierr)
       if (ierr /= 0) call io_error('Error in allocating mmn_tmp in overlap_read')
       do ncount = 1, num_mmn
-        read (mmn_in, *, err=103, end=103) nkp, nkp2, nnl, nnm, nnn
-        do n = 1, num_bands
-          do m = 1, num_bands
-            read (mmn_in, *, err=103, end=103) m_real, m_imag
-            mmn_tmp(m, n) = cmplx(m_real, m_imag, kind=dp)
+        if (mmn_formatted) then
+          read (mmn_in, *, err=103, end=103) nkp, nkp2, nnl, nnm, nnn
+          do n = 1, num_bands
+            do m = 1, num_bands
+              read (mmn_in, *, err=103, end=103) m_real, m_imag
+              mmn_tmp(m, n) = cmplx(m_real, m_imag, kind=dp)
+            enddo
           enddo
-        enddo
+        else
+          read (mmn_in, err=103, end=103) nkp, nkp2, nnl, nnm, nnn
+          do n = 1, num_bands
+            do m = 1, num_bands
+              read (mmn_in, err=103, end=103) m_real, m_imag
+              mmn_tmp(m, n) = cmplx(m_real, m_imag, kind=dp)
+            enddo
+          enddo
+        end if
         nn = 0
         nn_found = .false.
         do inn = 1, nntot
@@ -216,16 +239,28 @@ contains
 
         ! Read A_matrix from file wannier.amn
         amn_in = io_file_unit()
-        open (unit=amn_in, file=trim(seedname)//'.amn', form='formatted', status='old', err=102)
+        if (amn_formatted) then
+          open (unit=amn_in, file=trim(seedname)//'.amn', form='formatted', status='old', err=102)
+        else
+          open (unit=amn_in, file=trim(seedname)//'.amn', form='unformatted', access='stream', status='old', err=102)
+        end if
 
         if (on_root) write (stdout, '(/a)', advance='no') ' Reading projections from '//trim(seedname)//'.amn : '
 
         ! Read the comment line
-        read (amn_in, '(a)', err=104, end=104) dummy
+        if (amn_formatted) then
+          read (amn_in, '(a)', err=104, end=104) dummy
+        else
+          read (amn_in, err=104, end=104) dummy
+        end if
         if (on_root) write (stdout, '(a)') trim(dummy)
 
         ! Read the number of bands, k-points and wannier functions
-        read (amn_in, *, err=104, end=104) nb_tmp, nkp_tmp, np_tmp
+        if (amn_formatted) then
+          read (amn_in, *, err=104, end=104) nb_tmp, nkp_tmp, np_tmp
+        else
+          read (amn_in, err=104, end=104) nb_tmp, nkp_tmp, np_tmp
+        end if
 
         ! Checks
         if (nb_tmp .ne. num_bands) &
@@ -242,13 +277,21 @@ contains
         num_amn = num_bands*num_proj*num_kpts
         if (disentanglement) then
           do ncount = 1, num_amn
-            read (amn_in, *, err=104, end=104) m, n, nkp, a_real, a_imag
+            if (amn_formatted) then
+              read (amn_in, *, err=104, end=104) m, n, nkp, a_real, a_imag
+            else
+              read (amn_in, err=104, end=104) m, n, nkp, a_real, a_imag
+            end if
             if (proj2wann_map(n) < 0) cycle
             a_matrix(m, proj2wann_map(n), nkp) = cmplx(a_real, a_imag, kind=dp)
           end do
         else
           do ncount = 1, num_amn
-            read (amn_in, *, err=104, end=104) m, n, nkp, a_real, a_imag
+            if (amn_formatted) then
+              read (amn_in, *, err=104, end=104) m, n, nkp, a_real, a_imag
+            else
+              read (amn_in, err=104, end=104) m, n, nkp, a_real, a_imag
+            end if
             if (proj2wann_map(n) < 0) cycle
             u_matrix(m, proj2wann_map(n), nkp) = cmplx(a_real, a_imag, kind=dp)
           end do

@@ -265,10 +265,10 @@ contains
     use w90_constants, only: dp, cmplx_0, cmplx_i
     use w90_parameters, only: num_kpts, nntot, num_wann, wb, bk, timing_level, &
       num_bands, ndimwin, nnlist, have_disentangled, &
-      transl_inv, nncell, effective_model
+      transl_inv, nncell, effective_model, mmn_formatted
     use w90_postw90_common, only: nrpts
     use w90_io, only: stdout, io_file_unit, io_error, io_stopwatch, &
-      seedname
+      seedname, header_len
     use w90_comms, only: on_root, comms_bcast
 
     complex(kind=dp), allocatable :: AA_q(:, :, :, :)
@@ -284,7 +284,7 @@ contains
     real(kind=dp)                 :: m_real, m_imag, rdum1_real, rdum1_imag, &
                                      rdum2_real, rdum2_imag, rdum3_real, rdum3_imag
     logical                       :: nn_found
-    character(len=60)             :: header
+    character(len=header_len)     :: header
 
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_AA_R', 1)
 
@@ -367,15 +367,28 @@ contains
       enddo
 
       mmn_in = io_file_unit()
-      open (unit=mmn_in, file=trim(seedname)//'.mmn', &
-            form='formatted', status='old', action='read', err=101)
+      if (mmn_formatted) then
+        open (unit=mmn_in, file=trim(seedname)//'.mmn', &
+              form='formatted', status='old', action='read', err=101)
+      else
+        open (unit=mmn_in, file=trim(seedname)//'.mmn', &
+              form='unformatted', access='stream', status='old', action='read', err=101)
+      end if
       write (stdout, '(/a)', advance='no') &
         ' Reading overlaps from '//trim(seedname)//'.mmn in get_AA_R   : '
       ! Read the comment line (header)
-      read (mmn_in, '(a)', err=102, end=102) header
+      if (mmn_formatted) then
+        read (mmn_in, '(a)', err=102, end=102) header
+      else
+        read (mmn_in, err=102, end=102) header
+      end if
       write (stdout, '(a)') trim(header)
       ! Read the number of bands, k-points and nearest neighbours
-      read (mmn_in, *, err=102, end=102) nb_tmp, nkp_tmp, nntot_tmp
+      if (mmn_formatted) then
+        read (mmn_in, *, err=102, end=102) nb_tmp, nkp_tmp, nntot_tmp
+      else
+        read (mmn_in, err=102, end=102) nb_tmp, nkp_tmp, nntot_tmp
+      end if
       ! Checks
       if (nb_tmp .ne. num_bands) &
         call io_error(trim(seedname)//'.mmn has wrong number of bands')
@@ -394,13 +407,23 @@ contains
         !Read from .mmn file the original overlap matrix
         ! S_o=<u_ik|u_ik2> between ab initio eigenstates
         !
-        read (mmn_in, *, err=102, end=102) ik, ik2, nnl, nnm, nnn
-        do n = 1, num_bands
-          do m = 1, num_bands
-            read (mmn_in, *, err=102, end=102) m_real, m_imag
-            S_o(m, n) = cmplx(m_real, m_imag, kind=dp)
+        if (mmn_formatted) then
+          read (mmn_in, *, err=102, end=102) ik, ik2, nnl, nnm, nnn
+          do n = 1, num_bands
+            do m = 1, num_bands
+              read (mmn_in, *, err=102, end=102) m_real, m_imag
+              S_o(m, n) = cmplx(m_real, m_imag, kind=dp)
+            enddo
           enddo
-        enddo
+        else
+          read (mmn_in, err=102, end=102) ik, ik2, nnl, nnm, nnn
+          do n = 1, num_bands
+            do m = 1, num_bands
+              read (mmn_in, err=102, end=102) m_real, m_imag
+              S_o(m, n) = cmplx(m_real, m_imag, kind=dp)
+            enddo
+          enddo
+        end if
         !debug
         !OK
         !if(ik.ne.ik_prev .and.ik_prev.ne.0) then
@@ -520,10 +543,10 @@ contains
     use w90_constants, only: dp, cmplx_0, cmplx_i
     use w90_parameters, only: num_kpts, nntot, nnlist, num_wann, num_bands, &
       ndimwin, eigval, wb, bk, have_disentangled, &
-      timing_level, nncell, scissors_shift
+      timing_level, nncell, scissors_shift, mmn_formatted
     use w90_postw90_common, only: nrpts, v_matrix
     use w90_io, only: stdout, io_file_unit, io_error, io_stopwatch, &
-      seedname
+      seedname, header_len
     use w90_comms, only: on_root, comms_bcast
 
     integer          :: idir, n, m, nn, i, ii, j, jj, &
@@ -537,7 +560,7 @@ contains
     integer, allocatable          :: num_states(:)
     real(kind=dp)                 :: m_real, m_imag
     logical                       :: nn_found
-    character(len=60)             :: header
+    character(len=header_len)     :: header
 
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_BB_R', 1)
     if (.not. allocated(BB_R)) then
@@ -566,15 +589,28 @@ contains
       enddo
 
       mmn_in = io_file_unit()
-      open (unit=mmn_in, file=trim(seedname)//'.mmn', &
-            form='formatted', status='old', action='read', err=103)
+      if (mmn_formatted) then
+        open (unit=mmn_in, file=trim(seedname)//'.mmn', &
+              form='formatted', status='old', action='read', err=103)
+      else
+        open (unit=mmn_in, file=trim(seedname)//'.mmn', &
+              form='unformatted', access='stream', status='old', action='read', err=103)
+      end if
       write (stdout, '(/a)', advance='no') &
         ' Reading overlaps from '//trim(seedname)//'.mmn in get_BB_R   : '
       ! Read the comment line (header)
-      read (mmn_in, '(a)', err=104, end=104) header
+      if (mmn_formatted) then
+        read (mmn_in, '(a)', err=104, end=104) header
+      else
+        read (mmn_in, err=104, end=104) header
+      end if
       write (stdout, '(a)') trim(header)
       ! Read the number of bands, k-points and nearest neighbours
-      read (mmn_in, *, err=104, end=104) nb_tmp, nkp_tmp, nntot_tmp
+      if (mmn_formatted) then
+        read (mmn_in, *, err=104, end=104) nb_tmp, nkp_tmp, nntot_tmp
+      else
+        read (mmn_in, err=104, end=104) nb_tmp, nkp_tmp, nntot_tmp
+      end if
       ! Checks
       if (nb_tmp .ne. num_bands) &
         call io_error(trim(seedname)//'.mmn has wrong number of bands')
@@ -591,13 +627,23 @@ contains
         !Read from .mmn file the original overlap matrix
         ! S_o=<u_ik|u_ik2> between ab initio eigenstates
         !
-        read (mmn_in, *, err=104, end=104) ik, ik2, nnl, nnm, nnn
-        do n = 1, num_bands
-          do m = 1, num_bands
-            read (mmn_in, *, err=104, end=104) m_real, m_imag
-            S_o(m, n) = cmplx(m_real, m_imag, kind=dp)
+        if (mmn_formatted) then
+          read (mmn_in, *, err=104, end=104) ik, ik2, nnl, nnm, nnn
+          do n = 1, num_bands
+            do m = 1, num_bands
+              read (mmn_in, *, err=104, end=104) m_real, m_imag
+              S_o(m, n) = cmplx(m_real, m_imag, kind=dp)
+            enddo
           enddo
-        enddo
+        else
+          read (mmn_in, err=104, end=104) ik, ik2, nnl, nnm, nnn
+          do n = 1, num_bands
+            do m = 1, num_bands
+              read (mmn_in, err=104, end=104) m_real, m_imag
+              S_o(m, n) = cmplx(m_real, m_imag, kind=dp)
+            enddo
+          enddo
+        end if
         nn = 0
         nn_found = .false.
         do inn = 1, nntot
@@ -669,7 +715,7 @@ contains
       scissors_shift, uHu_formatted
     use w90_postw90_common, only: nrpts, v_matrix
     use w90_io, only: stdout, io_error, io_stopwatch, io_file_unit, &
-      seedname
+      seedname, header_len
     use w90_comms, only: on_root, comms_bcast
 
     integer          :: i, j, ii, jj, m, n, a, b, nn1, nn2, ik, nb_tmp, nkp_tmp, &
@@ -680,7 +726,7 @@ contains
     complex(kind=dp), allocatable :: Ho_qb1_q_qb2(:, :)
     complex(kind=dp), allocatable :: H_qb1_q_qb2(:, :)
     real(kind=dp)                 :: c_real, c_img
-    character(len=60)             :: header
+    character(len=header_len)     :: header
 
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_CC_R', 1)
 
@@ -827,7 +873,7 @@ contains
       have_disentangled, timing_level
     use w90_postw90_common, only: nrpts, v_matrix
     use w90_io, only: stdout, io_error, io_stopwatch, io_file_unit, &
-      seedname
+      seedname, header_len
     use w90_comms, only: on_root, comms_bcast
 
     integer          :: i, j, ii, jj, m, n, a, b, nn1, nn2, ik, nb_tmp, nkp_tmp, nntot_tmp, &
@@ -837,7 +883,7 @@ contains
     complex(kind=dp), allocatable :: FF_q(:, :, :, :, :)
     complex(kind=dp), allocatable :: Lo_qb1_q_qb2(:, :)
     complex(kind=dp), allocatable :: L_qb1_q_qb2(:, :)
-    character(len=60)             :: header
+    character(len=header_len)     :: header
 
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_FF_R', 1)
 
@@ -974,7 +1020,7 @@ contains
       timing_level, have_disentangled, spn_formatted
     use w90_postw90_common, only: nrpts, v_matrix
     use w90_io, only: io_error, io_stopwatch, stdout, seedname, &
-      io_file_unit
+      io_file_unit, header_len
     use w90_comms, only: on_root, comms_bcast
 
     implicit none
@@ -984,7 +1030,7 @@ contains
     integer, allocatable          :: num_states(:)
     integer                       :: i, j, ii, jj, m, n, spn_in, ik, is, &
                                      winmin, nb_tmp, nkp_tmp, ierr, s, counter
-    character(len=60)             :: header
+    character(len=header_len)     :: header
 
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_SS_R', 1)
 
@@ -1120,10 +1166,10 @@ contains
       num_bands, ndimwin, nnlist, have_disentangled, &
       transl_inv, nncell, spn_formatted, eigval, &
       scissors_shift, num_valence_bands, &
-      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift
+      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift, mmn_formatted
     use w90_postw90_common, only: nrpts
     use w90_io, only: stdout, io_file_unit, io_error, io_stopwatch, &
-      seedname
+      seedname, header_len
     use w90_comms, only: on_root, comms_bcast
 
     complex(kind=dp), allocatable :: SR_q(:, :, :, :, :)
@@ -1153,7 +1199,7 @@ contains
     real(kind=dp)                 :: m_real, m_imag, rdum1_real, rdum1_imag, &
                                      rdum2_real, rdum2_imag, rdum3_real, rdum3_imag
     logical                       :: nn_found
-    character(len=60)             :: header
+    character(len=header_len)     :: header
 
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_SHC_R', 1)
 
@@ -1295,15 +1341,28 @@ contains
       allocate (S_o(num_bands, num_bands))
 
       mmn_in = io_file_unit()
-      open (unit=mmn_in, file=trim(seedname)//'.mmn', &
-            form='formatted', status='old', action='read', err=101)
+      if (mmn_formatted) then
+        open (unit=mmn_in, file=trim(seedname)//'.mmn', &
+              form='formatted', status='old', action='read', err=101)
+      else
+        open (unit=mmn_in, file=trim(seedname)//'.mmn', &
+              form='unformatted', access='stream', status='old', action='read', err=101)
+      end if
       write (stdout, '(/a)', advance='no') &
         ' Reading overlaps from '//trim(seedname)//'.mmn in get_SHC_R   : '
       ! Read the comment line (header)
-      read (mmn_in, '(a)', err=102, end=102) header
+      if (mmn_formatted) then
+        read (mmn_in, '(a)', err=102, end=102) header
+      else
+        read (mmn_in, err=102, end=102) header
+      end if
       write (stdout, '(a)') trim(header)
       ! Read the number of bands, k-points and nearest neighbours
-      read (mmn_in, *, err=102, end=102) nb_tmp, nkp_tmp, nntot_tmp
+      if (mmn_formatted) then
+        read (mmn_in, *, err=102, end=102) nb_tmp, nkp_tmp, nntot_tmp
+      else
+        read (mmn_in, err=102, end=102) nb_tmp, nkp_tmp, nntot_tmp
+      end if
       ! Checks
       if (nb_tmp .ne. num_bands) &
         call io_error(trim(seedname)//'.mmn has wrong number of bands')
@@ -1337,13 +1396,23 @@ contains
         !Read from .mmn file the original overlap matrix
         ! S_o=<u_ik|u_ik2> between ab initio eigenstates
         !
-        read (mmn_in, *, err=102, end=102) ik, ik2, nnl, nnm, nnn
-        do n = 1, num_bands
-          do m = 1, num_bands
-            read (mmn_in, *, err=102, end=102) m_real, m_imag
-            S_o(m, n) = cmplx(m_real, m_imag, kind=dp)
+        if (mmn_formatted) then
+          read (mmn_in, *, err=102, end=102) ik, ik2, nnl, nnm, nnn
+          do n = 1, num_bands
+            do m = 1, num_bands
+              read (mmn_in, *, err=102, end=102) m_real, m_imag
+              S_o(m, n) = cmplx(m_real, m_imag, kind=dp)
+            enddo
           enddo
-        enddo
+        else
+          read (mmn_in, err=102, end=102) ik, ik2, nnl, nnm, nnn
+          do n = 1, num_bands
+            do m = 1, num_bands
+              read (mmn_in, err=102, end=102) m_real, m_imag
+              S_o(m, n) = cmplx(m_real, m_imag, kind=dp)
+            enddo
+          enddo
+        end if
         !debug
         !OK
         !if(ik.ne.ik_prev .and.ik_prev.ne.0) then
@@ -1473,7 +1542,7 @@ contains
       scissors_shift
     use w90_postw90_common, only: nrpts, v_matrix
     use w90_io, only: stdout, io_error, io_stopwatch, io_file_unit, &
-      seedname
+      seedname, header_len
     use w90_comms, only: on_root, comms_bcast
 
     integer          :: i, j, ii, jj, m, n, a, b, nn1, nn2, ik, nb_tmp, nkp_tmp, &
@@ -1484,7 +1553,7 @@ contains
     complex(kind=dp), allocatable :: Ho_q_qb2(:, :, :)
     complex(kind=dp), allocatable :: H_q_qb2(:, :)
     real(kind=dp)                 :: c_real, c_img
-    character(len=60)             :: header
+    character(len=header_len)     :: header
 
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_SBB_R', 1)
 
@@ -1610,7 +1679,7 @@ contains
       scissors_shift
     use w90_postw90_common, only: nrpts, v_matrix
     use w90_io, only: stdout, io_error, io_stopwatch, io_file_unit, &
-      seedname
+      seedname, header_len
     use w90_comms, only: on_root, comms_bcast, my_node_id
 
     integer          :: i, j, ii, jj, m, n, a, b, nn1, nn2, ik, nb_tmp, nkp_tmp, &
@@ -1621,7 +1690,7 @@ contains
     complex(kind=dp), allocatable :: Ho_q_qb2(:, :, :)
     complex(kind=dp), allocatable :: H_q_qb2(:, :)
     real(kind=dp)                 :: c_real, c_img
-    character(len=60)             :: header
+    character(len=header_len)     :: header
 
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_SAA_R', 1)
 
