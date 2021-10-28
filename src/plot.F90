@@ -35,10 +35,10 @@ contains
     use w90_parameters, only: num_kpts, bands_plot, dos_plot, &
       kpt_latt, fermi_surface_plot, &
       wannier_plot, timing_level, write_bvec, &
-      write_hr, write_rmn, write_tb, write_u_matrices
+      write_hr, write_rmn, write_tb, write_u_matrices, write_hmn
     use w90_hamiltonian, only: hamiltonian_get_hr, hamiltonian_write_hr, &
       hamiltonian_setup, hamiltonian_write_rmn, &
-      hamiltonian_write_tb, nrpts, irvec
+      hamiltonian_write_tb, nrpts, irvec, hamiltonian_get_hmn
     use w90_ws_distance, only: done_ws_distance, ws_translate_dist, &
       ws_write_vec
 
@@ -74,6 +74,8 @@ contains
         call hamiltonian_setup()
         !
         call hamiltonian_get_hr()
+        !
+        if (write_hmn) call hamiltonian_get_hmn()
         !
         if (bands_plot) call plot_interpolate_bands
         !

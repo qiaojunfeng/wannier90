@@ -166,6 +166,9 @@ module w90_parameters
   character(len=20), public, save :: fermi_surface_plot_format
   real(kind=dp), save :: fermi_energy
 
+  logical, public, save :: write_hmn
+  logical, public, save :: hmn_formatted
+
   ! module  k p a t h
   logical, public, save :: kpath
   character(len=20), public, save :: kpath_task
@@ -1540,6 +1543,12 @@ contains
 
     write_tb = .false.
     call param_get_keyword('write_tb', found, l_value=write_tb)
+
+    write_hmn = .false.
+    call param_get_keyword('write_hmn', found, l_value=write_hmn)
+
+    hmn_formatted = .true.
+    call param_get_keyword('hmn_formatted', found, l_value=hmn_formatted)
 
     hr_cutoff = 0.0_dp
     call param_get_keyword('hr_cutoff', found, r_value=hr_cutoff)
@@ -6387,6 +6396,9 @@ contains
     call comms_bcast(fermi_surface_num_points, 1)
     call comms_bcast(fermi_surface_plot_format, len(fermi_surface_plot_format))
     call comms_bcast(fermi_energy, 1) !! used?
+
+    call comms_bcast(write_hmn, 1)
+    call comms_bcast(hmn_formatted, 1)
 
     call comms_bcast(berry, 1)
     call comms_bcast(berry_task, len(berry_task))

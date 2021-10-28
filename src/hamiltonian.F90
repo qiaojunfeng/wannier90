@@ -43,6 +43,7 @@ module w90_hamiltonian
   !
   real(kind=dp), public, save, allocatable :: wannier_centres_translated(:, :)
   !! translated Wannier centres
+  !
 
   public :: hamiltonian_get_hr
   public :: hamiltonian_write_hr
@@ -50,6 +51,7 @@ module w90_hamiltonian
   public :: hamiltonian_dealloc
   public :: hamiltonian_write_rmn
   public :: hamiltonian_write_tb
+  public :: hamiltonian_get_hmn
 
   ! Module variables
   logical, save :: ham_have_setup = .false.
@@ -62,6 +64,17 @@ module w90_hamiltonian
 
   complex(kind=dp), save, allocatable :: ham_k(:, :, :)
 
+  ! Following are the parts of Hamiltonian
+  ! Hamiltonian = Kinetic + Local potential + Non-local potential
+  complex(kind=dp), save, allocatable :: hkmn_r(:, :, :)
+  !! Kinetic operator matrix in WF representation
+  !
+  complex(kind=dp), save, allocatable :: hvmn_r(:, :, :)
+  !! Local potential operator matrix in WF representation
+
+  complex(kind=dp), save, allocatable :: hkmn_k(:, :, :)
+  complex(kind=dp), save, allocatable :: hvmn_k(:, :, :)
+
 contains
 
   !============================================!
@@ -72,7 +85,7 @@ contains
     use w90_constants, only: cmplx_0
     use w90_io, only: io_error
     use w90_parameters, only: num_wann, num_kpts, bands_plot, transport, &
-      bands_plot_mode, transport_mode
+      bands_plot_mode, transport_mode, write_hmn
 
     implicit none
 
@@ -106,6 +119,24 @@ contains
     allocate (ham_k(num_wann, num_wann, num_kpts), stat=ierr)
     if (ierr /= 0) call io_error('Error in allocating ham_k in hamiltonian_setup')
     ham_k = cmplx_0
+    !
+    if (write_hmn) then
+      allocate (hkmn_r(num_wann, num_wann, nrpts), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating hkmn_r in hamiltonian_setup')
+      hkmn_r = cmplx_0
+
+      allocate (hvmn_r(num_wann, num_wann, nrpts), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating hvmn_r in hamiltonian_setup')
+      hvmn_r = cmplx_0
+
+      allocate (hkmn_k(num_wann, num_wann, num_kpts), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating hkmn_k in hamiltonian_setup')
+      hkmn_k = cmplx_0
+
+      allocate (hvmn_k(num_wann, num_wann, num_kpts), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating hvmn_k in hamiltonian_setup')
+      hvmn_k = cmplx_0
+    end if
     !
     ! Set up the wigner_seitz vectors
     !
@@ -150,6 +181,22 @@ contains
     if (allocated(wannier_centres_translated)) then
       deallocate (wannier_centres_translated, stat=ierr)
       if (ierr /= 0) call io_error('Error in deallocating wannier_centres_translated in param_dealloc')
+    end if
+    if (allocated(hkmn_r)) then
+      deallocate (hkmn_r, stat=ierr)
+      if (ierr /= 0) call io_error('Error in deallocating hkmn_r in hamiltonian_dealloc')
+    end if
+    if (allocated(hvmn_r)) then
+      deallocate (hvmn_r, stat=ierr)
+      if (ierr /= 0) call io_error('Error in deallocating hvmn_r in hamiltonian_dealloc')
+    end if
+    if (allocated(hkmn_k)) then
+      deallocate (hkmn_k, stat=ierr)
+      if (ierr /= 0) call io_error('Error in deallocating hkmn_k in hamiltonian_dealloc')
+    end if
+    if (allocated(hvmn_k)) then
+      deallocate (hvmn_k, stat=ierr)
+      if (ierr /= 0) call io_error('Error in deallocating hvmn_k in hamiltonian_dealloc')
     end if
 
     ham_have_setup = .false.
@@ -708,7 +755,7 @@ contains
     use w90_io, only: io_error, io_stopwatch, io_file_unit, &
       seedname, io_date
     use w90_parameters, only: real_lattice, num_wann, timing_level, &
-      m_matrix, wb, bk, num_kpts, kpt_latt, nntot
+      m_matrix, wb, bk, num_kpts, kpt_latt, nntot, write_hmn
     use w90_constants, only: twopi, cmplx_i
 
     integer            :: i, j, irpt, ik, nn, idir, file_unit
@@ -742,14 +789,25 @@ contains
     !
     ! <0n|H|Rm>
     !
-    do irpt = 1, nrpts
-      write (file_unit, '(/,3I5)') irvec(:, irpt)
-      do i = 1, num_wann
-        do j = 1, num_wann
-          write (file_unit, '(2I5,3x,2(E15.8,1x))') j, i, ham_r(j, i, irpt)
+    if (.not. write_hmn) then
+      do irpt = 1, nrpts
+        write (file_unit, '(/,3I5)') irvec(:, irpt)
+        do i = 1, num_wann
+          do j = 1, num_wann
+            write (file_unit, '(2I5,3x,2(E15.8,1x))') j, i, ham_r(j, i, irpt)
+          end do
         end do
       end do
-    end do
+    else
+      do irpt = 1, nrpts
+        write (file_unit, '(/,3I5)') irvec(:, irpt)
+        do i = 1, num_wann
+          do j = 1, num_wann
+            write (file_unit, '(2I5,3x,6(E15.8,1x))') j, i, ham_r(j, i, irpt), hkmn_r(j, i, irpt), hvmn_r(j, i, irpt)
+          end do
+        end do
+      end do
+    end if
     !
     ! <0n|r|Rm>
     !
@@ -797,5 +855,301 @@ contains
                   //trim(seedname)//'_tb.dat')
 
   end subroutine hamiltonian_write_tb
+
+  !============================================!
+  subroutine hamiltonian_get_hmn()
+    !============================================!
+    !                                            !
+    !!  Calculate the kinetic, local potential   !
+    !!  operators in the WF basis                !
+    !                                            !
+    !============================================!
+
+    use w90_constants, only: cmplx_0
+    use w90_io, only: io_error, io_stopwatch
+    use w90_parameters, only: num_bands, num_kpts, num_wann, timing_level
+
+    implicit none
+
+    complex(kind=dp) :: tmp_hmn_k(num_bands, num_bands, num_kpts)
+
+    if (timing_level > 1) call io_stopwatch('hamiltonian: get_hmn', 1)
+
+    call internal_read_hmn('hkmn', tmp_hmn_k)
+    call internal_q_to_R(tmp_hmn_k, hkmn_k, hkmn_r)
+
+    call internal_read_hmn('hvmn', tmp_hmn_k)
+    call internal_q_to_R(tmp_hmn_k, hvmn_k, hvmn_r)
+
+    if (timing_level > 1) call io_stopwatch('hamiltonian: get_hmn', 2)
+    return
+
+  contains
+
+    subroutine internal_q_to_R(hmn_k, hmn_k_slim, hmn_r)
+
+      use w90_constants, only: cmplx_0, cmplx_i, twopi
+      use w90_parameters, only: num_bands, num_kpts, num_wann, u_matrix, &
+        eigval, kpt_latt, u_matrix_opt, lwindow, ndimwin, &
+        have_disentangled, timing_level
+      use w90_utility, only: utility_zgemm_new, utility_zgemmm
+
+      implicit none
+
+      complex(kind=dp), intent(in) :: hmn_k(num_bands, num_bands, num_kpts)
+      complex(kind=dp), intent(inout) :: hmn_k_slim(num_wann, num_wann, num_kpts)
+      complex(kind=dp), intent(inout) :: hmn_r(num_wann, num_wann, nrpts)
+
+      integer, allocatable :: shift_vec(:, :)
+      complex(kind=dp)     :: fac
+      real(kind=dp)        :: rdotk
+      real(kind=dp)        :: irvec_tmp(3)
+      integer              :: loop_kpt, i, j, m, irpt, ideg, ierr, counter_i, counter_j
+      complex(kind=dp)     :: hmn_opt(num_bands, num_bands)
+      complex(kind=dp)     :: utmp(num_bands, num_wann)
+
+      hmn_opt = cmplx_0
+
+      if (have_disentangled) then
+        do loop_kpt = 1, num_kpts
+          ! slim down matrix to contain states within the outer window
+          counter_j = 0
+          do j = 1, num_bands
+            if (lwindow(j, loop_kpt)) then
+              counter_j = counter_j + 1
+              counter_i = 0
+              do i = 1, num_bands
+                if (lwindow(i, loop_kpt)) then
+                  counter_i = counter_i + 1
+                  hmn_opt(counter_i, counter_j) = hmn_k(i, j, loop_kpt)
+                end if
+              end do
+            end if
+          end do
+
+          ! Transform to Wannier gauge
+          call utility_zgemm_new(u_matrix_opt(1:ndimwin(loop_kpt), :, loop_kpt), &
+                                 u_matrix(:, :, loop_kpt), utmp(1:ndimwin(loop_kpt), :))
+          call utility_zgemmm(utmp(1:ndimwin(loop_kpt), :), 'C', &
+                              hmn_opt(1:ndimwin(loop_kpt), 1:ndimwin(loop_kpt)), 'N', &
+                              utmp(1:ndimwin(loop_kpt), :), 'N', hmn_k_slim(:, :, loop_kpt))
+        enddo
+      else
+        call utility_zgemmm(u_matrix(:, :, loop_kpt), 'C', &
+                            hmn_k(:, :, loop_kpt), 'N', &
+                            u_matrix(:, :, loop_kpt), 'N', hmn_k_slim(:, :, loop_kpt))
+      end if
+
+      ! Fourier transform rotated hamiltonian into WF basis
+      ! H_ij(k) --> H_ij(R) = (1/N_kpts) sum_k e^{-ikR} H_ij(k)
+
+      hmn_r = cmplx_0
+
+      if (.not. use_translation) then
+        do irpt = 1, nrpts
+          do loop_kpt = 1, num_kpts
+            rdotk = twopi*dot_product(kpt_latt(:, loop_kpt), real(irvec(:, irpt), dp))
+            fac = exp(-cmplx_i*rdotk)/real(num_kpts, dp)
+            hmn_r(:, :, irpt) = hmn_r(:, :, irpt) + fac*hmn_k_slim(:, :, loop_kpt)
+          enddo
+        enddo
+        have_translated = .false.
+      else
+        allocate (shift_vec(3, num_wann), stat=ierr)
+        if (ierr /= 0) call io_error('Error in allocating shift_vec in hamiltonian_get_hmn')
+        call internal_translate_centres()
+
+        do irpt = 1, nrpts
+          do loop_kpt = 1, num_kpts
+            do i = 1, num_wann
+              do j = 1, num_wann
+                ! hmn_r(j,i,irpt)
+                ! interaction btw j at 0 and i at irvec(:,irpt)
+                irvec_tmp(:) = irvec(:, irpt) + shift_vec(:, i) - shift_vec(:, j)
+                rdotk = twopi*dot_product(kpt_latt(:, loop_kpt), real(irvec_tmp(:), dp))
+                fac = exp(-cmplx_i*rdotk)/real(num_kpts, dp)
+                hmn_r(j, i, irpt) = hmn_r(j, i, irpt) + fac*hmn_k_slim(j, i, loop_kpt)
+              end do
+            end do
+          enddo
+        enddo
+        have_translated = .true.
+      end if
+
+      if (allocated(shift_vec)) then
+        deallocate (shift_vec, stat=ierr)
+        if (ierr /= 0) call io_error('Error in deallocating shift_vec in hamiltonian_get_hmn')
+      end if
+
+      return
+    end subroutine internal_q_to_R
+
+    !====================================================!
+    subroutine internal_translate_centres()
+      !! Translate the centres of the WF into the home cell
+      !====================================================!
+
+      use w90_parameters, only: num_wann, real_lattice, recip_lattice, wannier_centres, &
+        num_atoms, atoms_pos_cart, translation_centre_frac, &
+        automatic_translation, num_species, atoms_species_num, lenconfac
+      use w90_io, only: stdout, io_error
+      use w90_utility, only: utility_cart_to_frac, utility_frac_to_cart
+
+      implicit none
+
+      ! <<<local variables>>>
+      integer :: iw, ierr, nat, nsp, ind
+      real(kind=dp), allocatable :: r_home(:, :), r_frac(:, :)
+      real(kind=dp) :: c_pos_cart(3), c_pos_frac(3)
+      real(kind=dp) :: r_frac_min(3)
+
+!~      if (.not.allocated(wannier_centres_translated)) then
+!~         allocate(wannier_centres_translated(3,num_wann),stat=ierr)
+!~         if (ierr/=0) call io_error('Error in allocating wannier_centres_translated &
+!~              &in internal_translate_wannier_centres')
+!~      end if
+
+      allocate (r_home(3, num_wann), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating r_home in internal_translate_centres')
+      allocate (r_frac(3, num_wann), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating r_frac in internal_translate_centres')
+      r_home = 0.0_dp; r_frac = 0.0_dp
+
+      if (automatic_translation) then
+        ! Calculate centre of atomic positions
+        c_pos_cart = 0.0_dp; c_pos_frac = 0.0_dp
+        do nsp = 1, num_species
+          do nat = 1, atoms_species_num(nsp)
+            c_pos_cart(:) = c_pos_cart(:) + atoms_pos_cart(:, nat, nsp)
+          enddo
+        enddo
+        c_pos_cart = c_pos_cart/num_atoms
+        ! Cartesian --> fractional
+        call utility_cart_to_frac(c_pos_cart, translation_centre_frac, recip_lattice)
+      end if
+      ! Wannier function centres will be in [c_pos_frac-0.5,c_pos_frac+0.5]
+      r_frac_min(:) = translation_centre_frac(:) - 0.5_dp
+
+      ! Cartesian --> fractional
+      do iw = 1, num_wann
+        call utility_cart_to_frac(wannier_centres(:, iw), r_frac(:, iw), recip_lattice)
+        ! Rationalise r_frac - r_frac_min to interval [0,1]
+        !  by applying shift of -floor(r_frac - r_frac_min)
+        shift_vec(:, iw) = -floor(r_frac(:, iw) - r_frac_min(:))
+        r_frac(:, iw) = r_frac(:, iw) + real(shift_vec(:, iw), dp)
+        ! Fractional --> Cartesian
+        call utility_frac_to_cart(r_frac(:, iw), r_home(:, iw), real_lattice)
+      end do
+
+      ! NEVER overwrite wannier_centres
+      !wannier_centres = r_home
+
+      if (on_root) then
+        write (stdout, '(1x,a)') 'Translated centres'
+        write (stdout, '(4x,a,3f10.6)') 'translation centre in fractional coordinate:', translation_centre_frac(:)
+        do iw = 1, num_wann
+          write (stdout, 888) iw, (r_home(ind, iw)*lenconfac, ind=1, 3)
+        end do
+        write (stdout, '(1x,a78)') repeat('-', 78)
+        write (stdout, *)
+      endif
+      wannier_centres_translated = r_home
+
+      deallocate (r_frac, stat=ierr)
+      if (ierr /= 0) call io_error('Error in deallocating r_frac in internal_translate_centres')
+      deallocate (r_home, stat=ierr)
+      if (ierr /= 0) call io_error('Error in deallocating r_home in internal_translate_centres')
+
+      return
+
+888   format(2x, 'WF centre ', i5, 2x, '(', f10.6, ',', f10.6, ',', f10.6, ' )')
+
+    end subroutine internal_translate_centres
+
+    subroutine internal_read_hmn(file_ext, hmn_k)
+      ! read hmn matrices
+      use w90_constants, only: dp, cmplx_0
+      use w90_io, only: io_file_unit, header_len, seedname, stdout
+      use w90_parameters, only: hmn_formatted, num_wann, ndimwin, num_kpts, num_bands, &
+        have_disentangled, timing_level
+
+      implicit none
+
+      character(len=*), INTENT(IN) :: file_ext
+      complex(kind=dp), INTENT(INOUT) :: hmn_k(num_bands, num_bands, num_kpts)
+
+      integer :: hmn_in, nb_tmp, nkp_tmp, ik, m, n, ierr, counter
+      character(len=header_len)     :: header
+      real(kind=dp)                 :: rdum_real, rdum_imag
+      complex(kind=dp), ALLOCATABLE :: hmn_temp(:)
+      character(LEN=60) :: file_name
+
+      hmn_k = cmplx_0
+
+      hmn_in = io_file_unit()
+      write (file_name, '(a)') trim(seedname)//'.'//trim(file_ext)
+      if (hmn_formatted) then
+        open (unit=hmn_in, file=trim(file_name), form='formatted', &
+              status='old', err=109)
+        write (stdout, '(/a)', advance='no') &
+          ' Reading Hamiltonian operator matrices from '//trim(file_name)//' in internal_read_hmn : '
+        read (hmn_in, *, err=110, end=110) header
+        write (stdout, '(a)') trim(header)
+        read (hmn_in, *, err=110, end=110) nb_tmp, nkp_tmp
+      else
+        open (unit=hmn_in, file=trim(file_name), form='unformatted', &
+              access='stream', status='old', err=109)
+        write (stdout, '(/a)', advance='no') &
+          ' Reading Hamiltonian operator matrices from '//trim(file_name)//' in internal_read_hmn : '
+        read (hmn_in, err=110, end=110) header
+        write (stdout, '(a)') trim(header)
+        read (hmn_in, err=110, end=110) nb_tmp, nkp_tmp
+      endif
+      if (nb_tmp .ne. num_bands) &
+        call io_error(trim(file_name)//' has wrong number of bands')
+      if (nkp_tmp .ne. num_kpts) &
+        call io_error(trim(file_name)//' has wrong number of k-points')
+      if (hmn_formatted) then
+        do ik = 1, num_kpts
+          do m = 1, num_bands
+            do n = 1, m
+              read (hmn_in, *, err=110, end=110) rdum_real, rdum_imag
+              hmn_k(n, m, ik) = cmplx(rdum_real, rdum_imag, dp)
+              ! Read upper-triangular part, now build the rest
+              if (m == n) cycle
+              hmn_k(m, n, ik) = conjg(hmn_k(n, m, ik))
+            end do
+          end do
+        enddo
+      else
+        allocate (hmn_temp((num_bands*(num_bands + 1))/2), stat=ierr)
+        if (ierr /= 0) call io_error('Error in allocating hmm_temp in internal_read_hmn')
+        do ik = 1, num_kpts
+          read (hmn_in) (hmn_temp(m), m=1, (num_bands*(num_bands + 1))/2)
+          counter = 0
+          do m = 1, num_bands
+            do n = 1, m
+              counter = counter + 1
+              hmn_k(n, m, ik) = hmn_temp(counter)
+              if (m == n) cycle
+              hmn_k(m, n, ik) = conjg(hmn_temp(counter))
+            end do
+          end do
+        end do
+        deallocate (hmn_temp, stat=ierr)
+        if (ierr /= 0) call io_error('Error in deallocating hmn_temp in internal_read_hmn')
+      endif
+
+      close (hmn_in)
+
+      RETURN
+
+109   call io_error &
+        ('Error: Problem opening input file '//trim(file_name))
+110   call io_error &
+        ('Error: Problem reading input file '//trim(file_name))
+    end subroutine internal_read_hmn
+
+  end subroutine hamiltonian_get_hmn
 
 end module w90_hamiltonian

@@ -1817,7 +1817,7 @@ contains
 
     use w90_constants, only: dp, cmplx_0
     use w90_io, only: io_error, stdout, io_stopwatch, &
-      io_file_unit, seedname
+      io_file_unit, seedname, header_len
     use w90_parameters, only: num_wann, ndimwin, num_kpts, num_bands, &
       have_disentangled, timing_level
     use w90_postw90_common, only: nrpts, v_matrix
@@ -1830,7 +1830,7 @@ contains
     complex(kind=dp), allocatable :: HA_q(:, :, :)
     complex(kind=dp), allocatable :: hmn_o(:, :, :), hmn_temp(:)
     logical                       :: new_ir
-    character(len=60)             :: header
+    character(len=header_len)     :: header
     logical                       :: hmn_formatted = .true.
 
     if (timing_level > 1 .and. on_root) call io_stopwatch('get_oper: get_HA_R', 1)
@@ -1888,6 +1888,7 @@ contains
               read (hmn_in, *, err=110, end=110) rdum_real, rdum_imag
               hmn_o(n, m, ik) = cmplx(rdum_real, rdum_imag, dp)
               ! Read upper-triangular part, now build the rest
+              if (m == n) cycle
               hmn_o(m, n, ik) = conjg(hmn_o(n, m, ik))
             end do
           end do
@@ -2010,6 +2011,7 @@ contains
       return
     endif
 
+    ! FIXME for projectability disentanglement, there might be states in the middle, should fix this
     do j = 1, num_bands
       if (lwindow(j, ik)) then
         win_min = j
