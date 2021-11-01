@@ -166,7 +166,10 @@ module w90_parameters
   character(len=20), public, save :: fermi_surface_plot_format
   real(kind=dp), save :: fermi_energy
 
-  logical, public, save :: write_hmn
+  logical, public, save :: write_hhmn
+  logical, public, save :: write_hkmn
+  logical, public, save :: write_hvmn
+  logical, public, save :: write_hdmn
   logical, public, save :: hmn_formatted
 
   ! module  k p a t h
@@ -1544,8 +1547,17 @@ contains
     write_tb = .false.
     call param_get_keyword('write_tb', found, l_value=write_tb)
 
-    write_hmn = .false.
-    call param_get_keyword('write_hmn', found, l_value=write_hmn)
+    write_hhmn = .false.
+    call param_get_keyword('write_hhmn', found, l_value=write_hhmn)
+
+    write_hkmn = .false.
+    call param_get_keyword('write_hkmn', found, l_value=write_hkmn)
+
+    write_hvmn = .false.
+    call param_get_keyword('write_hvmn', found, l_value=write_hvmn)
+
+    write_hdmn = .false.
+    call param_get_keyword('write_hdmn', found, l_value=write_hdmn)
 
     hmn_formatted = .true.
     call param_get_keyword('hmn_formatted', found, l_value=hmn_formatted)
@@ -6397,7 +6409,10 @@ contains
     call comms_bcast(fermi_surface_plot_format, len(fermi_surface_plot_format))
     call comms_bcast(fermi_energy, 1) !! used?
 
-    call comms_bcast(write_hmn, 1)
+    call comms_bcast(write_hhmn, 1)
+    call comms_bcast(write_hkmn, 1)
+    call comms_bcast(write_hvmn, 1)
+    call comms_bcast(write_hdmn, 1)
     call comms_bcast(hmn_formatted, 1)
 
     call comms_bcast(berry, 1)

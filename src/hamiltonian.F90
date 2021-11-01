@@ -66,14 +66,19 @@ module w90_hamiltonian
 
   ! Following are the parts of Hamiltonian
   ! Hamiltonian = Kinetic + Local potential + Non-local potential
+  complex(kind=dp), save, allocatable :: hhmn_r(:, :, :)
+  !! Total Hamiltonian operator matrix in WF representation
   complex(kind=dp), save, allocatable :: hkmn_r(:, :, :)
   !! Kinetic operator matrix in WF representation
-  !
   complex(kind=dp), save, allocatable :: hvmn_r(:, :, :)
   !! Local potential operator matrix in WF representation
+  complex(kind=dp), save, allocatable :: hdmn_r(:, :, :)
+  !! Non-local potential operator matrix in WF representation
 
+  complex(kind=dp), save, allocatable :: hhmn_k(:, :, :)
   complex(kind=dp), save, allocatable :: hkmn_k(:, :, :)
   complex(kind=dp), save, allocatable :: hvmn_k(:, :, :)
+  complex(kind=dp), save, allocatable :: hdmn_k(:, :, :)
 
 contains
 
@@ -85,7 +90,7 @@ contains
     use w90_constants, only: cmplx_0
     use w90_io, only: io_error
     use w90_parameters, only: num_wann, num_kpts, bands_plot, transport, &
-      bands_plot_mode, transport_mode, write_hmn
+      bands_plot_mode, transport_mode, write_hhmn, write_hkmn, write_hvmn, write_hdmn
 
     implicit none
 
@@ -120,22 +125,45 @@ contains
     if (ierr /= 0) call io_error('Error in allocating ham_k in hamiltonian_setup')
     ham_k = cmplx_0
     !
-    if (write_hmn) then
+
+    if (write_hhmn) then
+      allocate (hhmn_r(num_wann, num_wann, nrpts), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating hhmn_r in hamiltonian_setup')
+      hhmn_r = cmplx_0
+
+      allocate (hhmn_k(num_wann, num_wann, num_kpts), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating hhmn_k in hamiltonian_setup')
+      hhmn_k = cmplx_0
+    end if
+
+    if (write_hkmn) then
       allocate (hkmn_r(num_wann, num_wann, nrpts), stat=ierr)
       if (ierr /= 0) call io_error('Error in allocating hkmn_r in hamiltonian_setup')
       hkmn_r = cmplx_0
 
+      allocate (hkmn_k(num_wann, num_wann, num_kpts), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating hkmn_k in hamiltonian_setup')
+      hkmn_k = cmplx_0
+    end if
+
+    if (write_hvmn) then
       allocate (hvmn_r(num_wann, num_wann, nrpts), stat=ierr)
       if (ierr /= 0) call io_error('Error in allocating hvmn_r in hamiltonian_setup')
       hvmn_r = cmplx_0
 
-      allocate (hkmn_k(num_wann, num_wann, num_kpts), stat=ierr)
-      if (ierr /= 0) call io_error('Error in allocating hkmn_k in hamiltonian_setup')
-      hkmn_k = cmplx_0
-
       allocate (hvmn_k(num_wann, num_wann, num_kpts), stat=ierr)
       if (ierr /= 0) call io_error('Error in allocating hvmn_k in hamiltonian_setup')
       hvmn_k = cmplx_0
+    end if
+
+    if (write_hdmn) then
+      allocate (hdmn_r(num_wann, num_wann, nrpts), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating hdmn_r in hamiltonian_setup')
+      hdmn_r = cmplx_0
+
+      allocate (hdmn_k(num_wann, num_wann, num_kpts), stat=ierr)
+      if (ierr /= 0) call io_error('Error in allocating hdmn_k in hamiltonian_setup')
+      hdmn_k = cmplx_0
     end if
     !
     ! Set up the wigner_seitz vectors
@@ -755,7 +783,8 @@ contains
     use w90_io, only: io_error, io_stopwatch, io_file_unit, &
       seedname, io_date
     use w90_parameters, only: real_lattice, num_wann, timing_level, &
-      m_matrix, wb, bk, num_kpts, kpt_latt, nntot, write_hmn
+      m_matrix, wb, bk, num_kpts, kpt_latt, nntot, &
+      write_hhmn, write_hkmn, write_hvmn, write_hdmn
     use w90_constants, only: twopi, cmplx_i
 
     integer            :: i, j, irpt, ik, nn, idir, file_unit
@@ -789,25 +818,19 @@ contains
     !
     ! <0n|H|Rm>
     !
-    if (.not. write_hmn) then
-      do irpt = 1, nrpts
-        write (file_unit, '(/,3I5)') irvec(:, irpt)
-        do i = 1, num_wann
-          do j = 1, num_wann
-            write (file_unit, '(2I5,3x,2(E15.8,1x))') j, i, ham_r(j, i, irpt)
-          end do
+    do irpt = 1, nrpts
+      write (file_unit, '(/,3I5)') irvec(:, irpt)
+      do i = 1, num_wann
+        do j = 1, num_wann
+          write (file_unit, '(2I5,3x,2(E15.8,1x))', advance='no') j, i, ham_r(j, i, irpt)
+          if (write_hhmn) write (file_unit, '(2(E15.8,1x))', advance='no') hhmn_r(j, i, irpt)
+          if (write_hkmn) write (file_unit, '(2(E15.8,1x))', advance='no') hkmn_r(j, i, irpt)
+          if (write_hvmn) write (file_unit, '(2(E15.8,1x))', advance='no') hvmn_r(j, i, irpt)
+          if (write_hdmn) write (file_unit, '(2(E15.8,1x))', advance='no') hdmn_r(j, i, irpt)
+          write (file_unit, '(a)') ''
         end do
       end do
-    else
-      do irpt = 1, nrpts
-        write (file_unit, '(/,3I5)') irvec(:, irpt)
-        do i = 1, num_wann
-          do j = 1, num_wann
-            write (file_unit, '(2I5,3x,6(E15.8,1x))') j, i, ham_r(j, i, irpt), hkmn_r(j, i, irpt), hvmn_r(j, i, irpt)
-          end do
-        end do
-      end do
-    end if
+    end do
     !
     ! <0n|r|Rm>
     !
@@ -867,7 +890,8 @@ contains
 
     use w90_constants, only: cmplx_0
     use w90_io, only: io_error, io_stopwatch
-    use w90_parameters, only: num_bands, num_kpts, num_wann, timing_level
+    use w90_parameters, only: num_bands, num_kpts, num_wann, timing_level, &
+      write_hhmn, write_hkmn, write_hvmn, write_hdmn
 
     implicit none
 
@@ -875,11 +899,25 @@ contains
 
     if (timing_level > 1) call io_stopwatch('hamiltonian: get_hmn', 1)
 
-    call internal_read_hmn('hkmn', tmp_hmn_k)
-    call internal_q_to_R(tmp_hmn_k, hkmn_k, hkmn_r)
+    if (write_hhmn) then
+      call internal_read_hmn('hhmn', tmp_hmn_k)
+      call internal_q_to_R(tmp_hmn_k, hhmn_k, hhmn_r)
+    end if
 
-    call internal_read_hmn('hvmn', tmp_hmn_k)
-    call internal_q_to_R(tmp_hmn_k, hvmn_k, hvmn_r)
+    if (write_hkmn) then
+      call internal_read_hmn('hkmn', tmp_hmn_k)
+      call internal_q_to_R(tmp_hmn_k, hkmn_k, hkmn_r)
+    end if
+
+    if (write_hvmn) then
+      call internal_read_hmn('hvmn', tmp_hmn_k)
+      call internal_q_to_R(tmp_hmn_k, hvmn_k, hvmn_r)
+    end if
+
+    if (write_hdmn) then
+      call internal_read_hmn('hdmn', tmp_hmn_k)
+      call internal_q_to_R(tmp_hmn_k, hdmn_k, hdmn_r)
+    end if
 
     if (timing_level > 1) call io_stopwatch('hamiltonian: get_hmn', 2)
     return

@@ -35,7 +35,8 @@ contains
     use w90_parameters, only: num_kpts, bands_plot, dos_plot, &
       kpt_latt, fermi_surface_plot, &
       wannier_plot, timing_level, write_bvec, &
-      write_hr, write_rmn, write_tb, write_u_matrices, write_hmn
+      write_hr, write_rmn, write_tb, write_u_matrices, &
+      write_hhmn, write_hkmn, write_hvmn, write_hdmn
     use w90_hamiltonian, only: hamiltonian_get_hr, hamiltonian_write_hr, &
       hamiltonian_setup, hamiltonian_write_rmn, &
       hamiltonian_write_tb, nrpts, irvec, hamiltonian_get_hmn
@@ -75,7 +76,7 @@ contains
         !
         call hamiltonian_get_hr()
         !
-        if (write_hmn) call hamiltonian_get_hmn()
+        if (write_hhmn .or. write_hkmn .or. write_hvmn .or. write_hdmn) call hamiltonian_get_hmn()
         !
         if (bands_plot) call plot_interpolate_bands
         !
