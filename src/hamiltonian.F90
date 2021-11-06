@@ -895,9 +895,12 @@ contains
 
     implicit none
 
-    complex(kind=dp) :: tmp_hmn_k(num_bands, num_bands, num_kpts)
+    complex(kind=dp), allocatable :: tmp_hmn_k(:, :, :)
 
     if (timing_level > 1) call io_stopwatch('hamiltonian: get_hmn', 1)
+
+    allocate (tmp_hmn_k(num_bands, num_bands, num_kpts))
+    tmp_hmn_k = cmplx_0
 
     if (write_hhmn) then
       call internal_read_hmn('hhmn', tmp_hmn_k)
@@ -919,7 +922,10 @@ contains
       call internal_q_to_R(tmp_hmn_k, hdmn_k, hdmn_r)
     end if
 
+    deallocate (tmp_hmn_k)
+
     if (timing_level > 1) call io_stopwatch('hamiltonian: get_hmn', 2)
+
     return
 
   contains
