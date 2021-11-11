@@ -438,6 +438,8 @@ module w90_parameters
   integer, public, save :: bands_num_spec_points
   character(len=20), allocatable, public, save ::bands_label(:)
   real(kind=dp), allocatable, public, save ::bands_spec_points(:, :)
+  logical, public, save :: bands_kpt_explicit ! use user provided list of kpoints for bands kpath
+  real(kind=dp), allocatable, public, save ::bands_kpt_frac(:, :) !bands kpoints in cartesians
   real(kind=dp), allocatable, public, save ::kpt_cart(:, :) !kpoints in cartesians
   logical, public, save :: disentanglement
   real(kind=dp), public, save :: lenconfac
@@ -986,6 +988,7 @@ contains
         call io_error('Error: bands_plot_project asks for a non-valid wannier function to be projected')
     endif
 
+    bands_kpt_explicit = .false.
     bands_num_spec_points = 0
     call param_get_block_length('kpoint_path', found, i_temp)
     if (found) then
@@ -997,9 +1000,28 @@ contains
       allocate (bands_spec_points(3, bands_num_spec_points), stat=ierr)
       if (ierr /= 0) call io_error('Error allocating bands_spec_points in param_read')
       call param_get_keyword_kpath
+    else
+      bands_num_spec_points = 0
+      call param_get_block_length('explicit_kpath_labels', found2, bands_num_spec_points)
+      if (found2) then
+        bands_kpt_explicit = .true.
+        if (allocated(bands_label)) deallocate (bands_label)
+        allocate (bands_label(bands_num_spec_points), stat=ierr)
+        if (ierr /= 0) call io_error('Error allocating bands_label in param_read')
+        if (allocated(bands_spec_points)) deallocate (bands_spec_points)
+        allocate (bands_spec_points(3, bands_num_spec_points), stat=ierr)
+        if (ierr /= 0) call io_error('Error allocating bands_spec_points in param_read')
+        call param_get_keyword_kpath_explicit
+
+        call param_get_block_length('explicit_kpath', ltmp, i_temp)
+        if (.not. ltmp) call io_error('Found explicit_kpath_labels but there is no explicit_kpath block')
+        allocate (bands_kpt_frac(3, i_temp), stat=ierr)
+        if (ierr /= 0) call io_error('Error allocating bands_kpt_frac in param_read')
+        call param_get_keyword_block('explicit_kpath', ltmp, i_temp, 3, r_value=bands_kpt_frac)
+      end if
     end if
-    if (.not. found .and. bands_plot) &
-      call io_error('A bandstructure plot has been requested but there is no kpoint_path block')
+    if (.not. found .and. .not. found2 .and. bands_plot) &
+      call io_error('A bandstructure plot has been requested but there is no kpoint_path or explicit_kpath block')
 
     ! checks
     if (bands_plot) then
@@ -1007,7 +1029,7 @@ contains
         call io_error('Error: bands_plot_format not recognised')
       if ((index(bands_plot_mode, 's-k') .eq. 0) .and. (index(bands_plot_mode, 'cut') .eq. 0)) &
         call io_error('Error: bands_plot_mode not recognised')
-      if (bands_num_points < 0) call io_error('Error: bands_num_points must be positive')
+      if (.not. bands_kpt_explicit .and. bands_num_points < 0) call io_error('Error: bands_num_points must be positive')
     endif
 
     fermi_surface_plot = .false.
@@ -1404,8 +1426,10 @@ contains
         index(kpath_task, 'morb') == 0 .and. &
         index(kpath_task, 'shc') == 0) call io_error &
       ('Error: value of kpath_task not recognised in param_read')
-    if (bands_num_spec_points == 0 .and. kpath) &
+    if (.not. bands_kpt_explicit .and. bands_num_spec_points == 0 .and. kpath) &
       call io_error('Error: a kpath plot has been requested but there is no kpoint_path block')
+    if (bands_kpt_explicit .and. kpath) &
+      call io_error('Error: bands_kpt_explicit not implemented with kpath')
 
     kpath_num_points = 100
     call param_get_keyword('kpath_num_points', found, &
@@ -2963,8 +2987,13 @@ contains
       !
       if (bands_plot .or. iprint > 2) then
         write (stdout, '(1x,a46,10x,L8,13x,a1)') '|  Plotting interpolated bandstructure       :', bands_plot, '|'
-        write (stdout, '(1x,a46,10x,I8,13x,a1)') '|   Number of K-path sections                :', bands_num_spec_points/2, '|'
-        write (stdout, '(1x,a46,10x,I8,13x,a1)') '|   Divisions along first K-path section     :', bands_num_points, '|'
+        if (bands_kpt_explicit) then
+          write (stdout, '(1x,a46,10x,I8,13x,a1)') '|   Number of high-symmetry points           :', bands_num_spec_points, '|'
+          write (stdout, '(1x,a46,10x,I8,13x,a1)') '|   Total number of points along K-path      :', size(bands_kpt_frac, 2), '|'
+        else
+          write (stdout, '(1x,a46,10x,I8,13x,a1)') '|   Number of K-path sections                :', bands_num_spec_points/2, '|'
+          write (stdout, '(1x,a46,10x,I8,13x,a1)') '|   Divisions along first K-path section     :', bands_num_points, '|'
+        end if
         write (stdout, '(1x,a46,10x,a8,13x,a1)') '|   Output format                            :', trim(bands_plot_format), '|'
         write (stdout, '(1x,a46,10x,a8,13x,a1)') '|   Output mode                              :', trim(bands_plot_mode), '|'
         if (index(bands_plot_mode, 'cut') .ne. 0) then
@@ -2978,14 +3007,25 @@ contains
           write (stdout, '(1x,a46,10x,a8,13x,a1)') '|   Hamiltonian cut-off distance mode        :', trim(dist_cutoff_mode), '|'
         endif
         write (stdout, '(1x,a78)') '*----------------------------------------------------------------------------*'
-        write (stdout, '(1x,a78)') '|   K-space path sections:                                                   |'
+        if (bands_kpt_explicit) then
+          write (stdout, '(1x,a78)') '|   K-space path high symmetry points:                                       |'
+        else
+          write (stdout, '(1x,a78)') '|   K-space path sections:                                                   |'
+        end if
         if (bands_num_spec_points == 0) then
           write (stdout, '(1x,a78)') '|     None defined                                                           |'
         else
-          do loop = 1, bands_num_spec_points, 2
-            write (stdout, '(1x,a10,1x,a5,1x,3F7.3,5x,a3,1x,a5,1x,3F7.3,3x,a1)') '|    From:', bands_label(loop), &
-              (bands_spec_points(i, loop), i=1, 3), 'To:', bands_label(loop + 1), (bands_spec_points(i, loop + 1), i=1, 3), '|'
-          end do
+          if (bands_kpt_explicit) then
+            do loop = 1, bands_num_spec_points
+              write (stdout, '(1x,a5,a5,1x,3F7.3,a46)') '|    ', bands_label(loop), &
+                (bands_spec_points(i, loop), i=1, 3), '                                             |'
+            end do
+          else
+            do loop = 1, bands_num_spec_points, 2
+              write (stdout, '(1x,a10,1x,a5,1x,3F7.3,5x,a3,1x,a5,1x,3F7.3,3x,a1)') '|    From:', bands_label(loop), &
+                (bands_spec_points(i, loop), i=1, 3), 'To:', bands_label(loop + 1), (bands_spec_points(i, loop + 1), i=1, 3), '|'
+            end do
+          end if
         end if
         write (stdout, '(1x,a78)') '*----------------------------------------------------------------------------*'
       end if
@@ -3249,10 +3289,14 @@ contains
       if (bands_num_spec_points == 0) then
         write (stdout, '(1x,a78)') '|     None defined                                                           |'
       else
-        do loop = 1, bands_num_spec_points, 2
-          write (stdout, '(1x,a10,2x,a1,2x,3F7.3,5x,a3,2x,a1,2x,3F7.3,7x,a1)') '|    From:', bands_label(loop), &
-            (bands_spec_points(i, loop), i=1, 3), 'To:', bands_label(loop + 1), (bands_spec_points(i, loop + 1), i=1, 3), '|'
-        end do
+        if (bands_kpt_explicit) then
+          do loop = 1, bands_num_spec_points, 2
+            write (stdout, '(1x,a10,2x,a1,2x,3F7.3,5x,a3,2x,a1,2x,3F7.3,7x,a1)') '|    From:', bands_label(loop), &
+              (bands_spec_points(i, loop), i=1, 3), 'To:', bands_label(loop + 1), (bands_spec_points(i, loop + 1), i=1, 3), '|'
+          end do
+        else
+          write (stdout, *) 'To be done!'
+        end if
       end if
       write (stdout, '(1x,a78)') '*----------------------------------------------------------------------------*'
     endif
@@ -5864,6 +5908,78 @@ contains
 240 call io_error('param_get_keyword_kpath: Problem reading kpath '//trim(dummy))
 
   end subroutine param_get_keyword_kpath
+
+  !===================================!
+  subroutine param_get_keyword_kpath_explicit
+    !=============================================================!
+    !                                                             !
+    !!  Fills the kpath data block for a list of explicit kpoints
+    !                                                             !
+    !=============================================================!
+    use w90_io, only: io_error
+
+    implicit none
+
+    character(len=20) :: keyword
+    integer           :: in, ins, ine, loop, i, line_e, line_s, counter
+    logical           :: found_e, found_s
+    character(len=maxlen) :: dummy, end_st, start_st
+
+    keyword = "explicit_kpath_labels"
+
+    found_s = .false.
+    found_e = .false.
+
+    start_st = 'begin '//trim(keyword)
+    end_st = 'end '//trim(keyword)
+
+    do loop = 1, num_lines
+      ins = index(in_data(loop), trim(keyword))
+      if (ins == 0) cycle
+      in = index(in_data(loop), 'begin')
+      if (in == 0 .or. in > 1) cycle
+      line_s = loop
+      if (found_s) then
+        call io_error('Error: Found '//trim(start_st)//' more than once in input file')
+      endif
+      found_s = .true.
+    end do
+
+    do loop = 1, num_lines
+      ine = index(in_data(loop), trim(keyword))
+      if (ine == 0) cycle
+      in = index(in_data(loop), 'end')
+      if (in == 0 .or. in > 1) cycle
+      line_e = loop
+      if (found_e) then
+        call io_error('Error: Found '//trim(end_st)//' more than once in input file')
+      endif
+      found_e = .true.
+    end do
+
+    if (.not. found_e) then
+      call io_error('Error: Found '//trim(start_st)//' but no '//trim(end_st)//' in input file')
+    end if
+
+    if (line_e <= line_s) then
+      call io_error('Error: '//trim(end_st)//' comes before '//trim(start_st)//' in input file')
+    end if
+
+    counter = 0
+    do loop = line_s + 1, line_e - 1
+
+      counter = counter + 1
+      dummy = in_data(loop)
+      read (dummy, *, err=240, end=240) bands_label(counter), (bands_spec_points(i, counter), i=1, 3)
+    end do
+
+    in_data(line_s:line_e) (1:maxlen) = ' '
+
+    return
+
+240 call io_error('param_get_keyword_kpath_explicit: Problem reading '//trim(keyword)//' '//trim(dummy))
+
+  end subroutine param_get_keyword_kpath_explicit
 
 !===========================================!
   subroutine param_memory_estimate
