@@ -126,6 +126,8 @@ module w90_parameters
   integer, public, save :: dis_proj_num_nonfroz
   !! for proj-disentanglement, specify the number of highest eigvalues that won't be frozen,
   !! to ensure there are enough freedom to construct a smooth manifold
+  logical, public, save :: dis_proj_normalize
+  !! normalize projectability to 1
   integer, public, save :: num_iter
   !! Number of wannierisation iterations
   integer, public, save :: num_cg_steps
@@ -1807,6 +1809,9 @@ contains
     call param_get_keyword('dis_proj_num_nonfroz', found, i_value=dis_proj_num_nonfroz)
     if (dis_proj_num_nonfroz < 0) call io_error('Error: dis_proj_num_nonfroz must be positive')
     if (dis_proj_num_nonfroz > num_wann) call io_error('Error: dis_proj_num_nonfroz must <= num_wann')
+
+    dis_proj_normalize = .false.
+    call param_get_keyword('dis_proj_normalize', found, l_value=dis_proj_normalize)
 
     dis_num_iter = 200
     call param_get_keyword('dis_num_iter', found, i_value=dis_num_iter)
@@ -6343,6 +6348,7 @@ contains
     call comms_bcast(dis_proj_min, 1)
     call comms_bcast(dis_proj_max, 1)
     call comms_bcast(dis_proj_num_nonfroz, 1)
+    call comms_bcast(dis_proj_normalize, 1)
     call comms_bcast(dis_num_iter, 1)
     call comms_bcast(dis_mix_ratio, 1)
     call comms_bcast(dis_conv_tol, 1)

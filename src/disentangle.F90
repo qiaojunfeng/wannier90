@@ -27,7 +27,8 @@ module w90_disentangle
     eigval, length_unit, dis_spheres, m_matrix, dis_conv_tol, frozen_states, &
     optimisation, recip_lattice, kpt_latt, &
     m_matrix_orig_local, m_matrix_local, &
-    frozen_states_proj, dis_proj_min, dis_proj_max, dis_proj_num_nonfroz
+    frozen_states_proj, dis_proj_min, dis_proj_max, dis_proj_num_nonfroz, &
+    dis_proj_normalize
 
   use w90_comms, only: on_root, my_node_id, num_nodes, &
     comms_bcast, comms_array_split, &
@@ -1035,7 +1036,7 @@ contains
         do j = 1, num_wann
           projs(i) = projs(i) + real(a_matrix(i, j, nkp), dp)**2 + aimag(a_matrix(i, j, nkp))**2
         end do
-        if ((projs(i) < 0.0_dp) .or. (projs(i) > 1.0_dp)) then
+        if (.not. dis_proj_normalize .and. ((projs(i) < 0.0_dp) .or. (projs(i) > 1.0_dp))) then
           if (on_root) write (stdout, *) ' Error at k-point: ', nkp, '  band: ', i
           if (on_root) write (stdout, 411) (eigval_opt(j, nkp), j=1, num_bands)
 411       format('Bands (eV): ', 10(F10.5, 1X))
@@ -1044,6 +1045,9 @@ contains
           call io_error('dis_windows_proj: projectability < 0.0 or > 1.0 ?')
         end if
       end do
+      if (dis_proj_normalize) then
+        projs(:) = projs(:) / sum(projs(:))
+      end if
 
       ! Check which eigenvalues fall within the inner/outer windows
       nfirstwin(nkp) = 1
