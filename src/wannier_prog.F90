@@ -232,6 +232,9 @@ program wannier
   if (on_root) call param_write_chkpt('postwann')
 
 2002 continue
+!!!!!!!!!!!!!!!!!!!
+call print_spread()
+!!!!!!!!!!!!!!!!!!!
   if (on_root) then
     ! I call the routine always; the if statements to decide if/what
     ! to plot are inside the function
@@ -278,5 +281,120 @@ program wannier
 
   call comms_end
 
-end program wannier
+contains
+  subroutine print_spread
+    use w90_constants, only: dp, cmplx_1, cmplx_0, eps2, eps5, eps8
+    use w90_io, only: stdout, io_error, io_wallclocktime, io_stopwatch &
+      , io_file_unit
+    use w90_parameters, only: num_wann, num_cg_steps, num_iter, nnlist, &
+      nntot, wbtot, u_matrix, m_matrix, num_kpts, iprint, num_print_cycles, &
+      num_dump_cycles, omega_invariant, param_write_chkpt, length_unit, &
+      lenconfac, proj_site, real_lattice, write_r2mn, guiding_centres, &
+      num_guide_cycles, num_no_guide_iter, timing_level, trial_step, precond, spinors, &
+      fixed_step, lfixstep, write_proj, have_disentangled, conv_tol, num_proj, &
+      conv_window, conv_noise_amp, conv_noise_num, wannier_centres, write_xyz, &
+      wannier_spreads, omega_total, omega_tilde, optimisation, write_vdw_data, &
+      write_hr_diag, kpt_latt, bk, ccentres_cart, slwf_num, selective_loc, &
+      slwf_constrain, slwf_lambda
+    use w90_utility, only: utility_frac_to_cart, utility_zgemm
+    use w90_parameters, only: lsitesymmetry                !RS:
+    use w90_sitesym, only: sitesym_symmetrize_gradient  !RS:
 
+    implicit none
+
+    ! guiding centres
+    real(kind=dp), allocatable :: rguide(:, :)
+    integer :: irguide
+
+    ! local arrays used and passed in subroutines
+    complex(kind=dp), allocatable :: csheet(:, :, :)
+    complex(kind=dp), allocatable :: cdodq(:, :, :)
+    complex(kind=dp), allocatable :: cdodq_r(:, :, :)
+    complex(kind=dp), allocatable :: k_to_r(:, :)
+    complex(kind=dp), allocatable :: cdodq_precond(:, :, :)
+    complex(kind=dp), allocatable :: cdodq_precond_loc(:, :, :)
+    real(kind=dp), allocatable :: sheet(:, :, :)
+    real(kind=dp), allocatable :: rave(:, :), r2ave(:), rave2(:)
+    real(kind=dp), dimension(3) :: rvec_cart
+
+    real(kind=dp) :: lambda_loc
+    type(localisation_vars) :: old_spread
+    type(localisation_vars) :: wann_spread
+    logical       :: lquad
+    integer       :: i, n, iter, ind, ierr, iw, ncg, info, nkp, nkp_loc, nn
+    !
+    irguide = 0
+    if (guiding_centres .and. (num_no_guide_iter .le. 0)) then
+      call wann_phases(csheet, sheet, rguide, irguide)
+      irguide = 1
+    endif
+
+    ! constrained centres part
+    lambda_loc = 0.0_dp
+    if (selective_loc .and. slwf_constrain) then
+      lambda_loc = slwf_lambda
+    end if
+
+    ! calculate initial centers and spread
+    call wann_omega(csheet, sheet, rave, r2ave, rave2, wann_spread)
+
+    ! public variables
+    if (.not. selective_loc) then
+      omega_total = wann_spread%om_tot
+      omega_invariant = wann_spread%om_i
+      omega_tilde = wann_spread%om_d + wann_spread%om_od
+    else
+      omega_total = wann_spread%om_tot
+      ! omega_invariant = wann_spread%om_iod
+      ! omega_tilde = wann_spread%om_d + wann_spread%om_nu
+    end if
+
+    ! public arrays of Wannier centres and spreads
+    wannier_centres = rave
+    wannier_spreads = r2ave - rave2
+
+    if (lfixstep) lquad = .false.
+    ncg = 0
+    iter = 0
+    old_spread%om_tot = 0.0_dp
+
+    ! print initial state
+    if (on_root) then
+      write (stdout, '(1x,a78)') repeat('-', 78)
+      write (stdout, '(1x,a)') 'Initial State'
+      do iw = 1, num_wann
+        write (stdout, 1000) iw, (rave(ind, iw)*lenconfac, ind=1, 3), &
+          (r2ave(iw) - rave2(iw))*lenconfac**2
+      end do
+      write (stdout, 1001) (sum(rave(ind, :))*lenconfac, ind=1, 3), (sum(r2ave) - sum(rave2))*lenconfac**2
+      write (stdout, *)
+      if (selective_loc .and. slwf_constrain) then
+        write (stdout, '(1x,i6,2x,E12.3,2x,F15.10,2x,F18.10,3x,F8.2,2x,a)') &
+          iter, (wann_spread%om_tot - old_spread%om_tot)*lenconfac**2, sqrt(abs(gcnorm1))*lenconfac, &
+          wann_spread%om_tot*lenconfac**2, io_wallclocktime(), '<-- CONV'
+        write (stdout, '(7x,a,F15.7,a,F15.7,a,F15.7,a,F15.7,a)') &
+          'O_D=', wann_spread%om_d*lenconfac**2, &
+          ' O_IOD=', (wann_spread%om_iod + wann_spread%om_nu)*lenconfac**2, &
+          ' O_TOT=', wann_spread%om_tot*lenconfac**2, ' <-- SPRD'
+        write (stdout, '(1x,a78)') repeat('-', 78)
+      elseif (selective_loc .and. .not. slwf_constrain) then
+        write (stdout, '(1x,i6,2x,E12.3,2x,F15.10,2x,F18.10,3x,F8.2,2x,a)') &
+          iter, (wann_spread%om_tot - old_spread%om_tot)*lenconfac**2, sqrt(abs(gcnorm1))*lenconfac, &
+          wann_spread%om_tot*lenconfac**2, io_wallclocktime(), '<-- CONV'
+        write (stdout, '(7x,a,F15.7,a,F15.7,a,F15.7,a)') &
+          'O_D=', wann_spread%om_d*lenconfac**2, &
+          ' O_IOD=', wann_spread%om_iod*lenconfac**2, &
+          ' O_TOT=', wann_spread%om_tot*lenconfac**2, ' <-- SPRD'
+        write (stdout, '(1x,a78)') repeat('-', 78)
+      else
+        write (stdout, '(1x,i6,2x,E12.3,2x,F15.10,2x,F18.10,3x,F8.2,2x,a)') &
+          iter, (wann_spread%om_tot - old_spread%om_tot)*lenconfac**2, sqrt(abs(gcnorm1))*lenconfac, &
+          wann_spread%om_tot*lenconfac**2, io_wallclocktime(), '<-- CONV'
+        write (stdout, '(8x,a,F15.7,a,F15.7,a,F15.7,a)') &
+          'O_D=', wann_spread%om_d*lenconfac**2, ' O_OD=', wann_spread%om_od*lenconfac**2, &
+          ' O_TOT=', wann_spread%om_tot*lenconfac**2, ' <-- SPRD'
+        write (stdout, '(1x,a78)') repeat('-', 78)
+      end if
+    endif
+  end subroutine print_spread
+end program wannier
