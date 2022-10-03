@@ -222,6 +222,9 @@ module w90_parameters
   integer, public, save :: shc_bandshift_firstband
   real(kind=dp), public, save :: shc_bandshift_energyshift
   logical, public, save :: shc_decomp
+  ! temperature for Fermi-Dirac distribution, Kelvin
+  ! default is -1. If < 0, use step function as distribution
+  real(kind=dp), public, save :: shc_temp
 
   logical, public, save :: gyrotropic
   character(len=120), public, save :: gyrotropic_task
@@ -1333,6 +1336,9 @@ contains
 
     shc_decomp = .false.
     call param_get_keyword('shc_decomp', found, l_value=shc_decomp)
+
+    shc_temp = -1._dp
+    call param_get_keyword('shc_temp', found, r_value=shc_temp)
 
     spin_moment = .false.
     call param_get_keyword('spin_moment', found, &
@@ -6211,6 +6217,7 @@ contains
     call comms_bcast(shc_bandshift_firstband, 1)
     call comms_bcast(shc_bandshift_energyshift, 1)
     call comms_bcast(shc_decomp, 1)
+    call comms_bcast(shc_temp, 1)
 
     call comms_bcast(devel_flag, len(devel_flag))
     call comms_bcast(spin_moment, 1)

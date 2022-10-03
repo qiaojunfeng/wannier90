@@ -30,7 +30,7 @@ module w90_postw90_common
   private
 
   public :: pw90common_wanint_setup, pw90common_wanint_get_kpoint_file, pw90common_wanint_param_dist
-  public :: pw90common_wanint_data_dist, pw90common_get_occ
+  public :: pw90common_wanint_data_dist, pw90common_get_occ, pw90common_get_occ_fd
   public :: pw90common_fourier_R_to_k, pw90common_fourier_R_to_k_new, pw90common_fourier_R_to_k_vec
   public :: nrpts, rpt_origin, v_matrix, ndegen, irvec, crvec
   public :: num_int_kpts_on_node, int_kpts, weight
@@ -299,6 +299,7 @@ contains
     call comms_bcast(shc_bandshift_firstband, 1)
     call comms_bcast(shc_bandshift_energyshift, 1)
     call comms_bcast(shc_decomp, 1)
+    call comms_bcast(shc_temp, 1)
 
     call comms_bcast(kubo_adpt_smr, 1)
     call comms_bcast(kubo_adpt_smr_fac, 1)
@@ -638,6 +639,53 @@ contains
 !    end if
 
   end subroutine pw90common_get_occ
+
+  subroutine pw90common_get_occ_fd(eig, occ, ef, t)
+    !! Compute the electronic occupancy using a Fermi-Dirac distribution
+
+    use w90_constants, only: dp, eps7
+    use w90_parameters, only: num_wann
+    use w90_constants, only: elem_charge_SI, k_B_SI
+
+    ! Arguments
+    !
+    real(kind=dp), intent(in)  :: eig(num_wann)
+    !! Eigenvalues
+    real(kind=dp), intent(in)  :: ef
+    !! Temperature
+    real(kind=dp), intent(in)  :: t
+    !! Fermi level
+    real(kind=dp), intent(out) :: occ(num_wann)
+    !! Occupancy of states
+
+    ! Misc/Dummy
+    !
+    integer       :: i
+    real(kind=dp) :: kt
+
+    ! State occupancies
+    !
+    if (t < eps7) then
+      !
+      ! Use a step function occupancy (T=0)
+      !
+      occ(:) = 0.0_dp
+      do i = 1, num_wann
+        if (eig(i) < ef) occ(i) = 1.0_dp
+      end do
+    else
+      !
+      ! Use a Fermi-Dirac occupancy (T=smear_temp, in Kelvin)
+      !
+      ! k_B.T in electron-volts
+      !
+      kt = k_B_SI*t/elem_charge_SI
+      do i = 1, num_wann
+        occ(i) = 1.0_dp/(exp((eig(i) - ef)/kt) + 1.0_dp)
+      end do
+    end if
+
+  end subroutine pw90common_get_occ_fd
 
 !=======================================================================
 

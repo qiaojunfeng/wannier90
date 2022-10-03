@@ -1969,8 +1969,8 @@ contains
       kubo_freq_list, kubo_adpt_smr, kubo_smr_fixed_en_width, &
       kubo_adpt_smr_max, kubo_adpt_smr_fac, berry_kmesh, &
       fermi_energy_list, nfermi, shc_alpha, shc_beta, shc_gamma, &
-      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift, shc_decomp
-    use w90_postw90_common, only: pw90common_get_occ, &
+      shc_bandshift, shc_bandshift_firstband, shc_bandshift_energyshift, shc_decomp, shc_temp
+    use w90_postw90_common, only: pw90common_get_occ, pw90common_get_occ_fd, &
       pw90common_fourier_R_to_k_vec, pw90common_kmesh_spacing, &
       pw90common_fourier_R_to_k_new
     use w90_wan_ham, only: wham_get_D_h, wham_get_eig_deleig
@@ -2124,11 +2124,19 @@ contains
       Delta_k = pw90common_kmesh_spacing(berry_kmesh)
     endif
     if (lfreq) then
-      call pw90common_get_occ(eig, occ_freq, fermi_energy_list(1))
+      if (shc_temp < 0.0) then
+        call pw90common_get_occ(eig, occ_freq, fermi_energy_list(1))
+      else
+        call pw90common_get_occ_fd(eig, occ_freq, fermi_energy_list(1), shc_temp)
+      endif
     elseif (lfermi) then
       ! get occ for different fermi_energy
       do i = 1, nfermi
-        call pw90common_get_occ(eig, occ_fermi(:, i), fermi_energy_list(i))
+        if (shc_temp < 0.0) then
+          call pw90common_get_occ(eig, occ_fermi(:, i), fermi_energy_list(i))
+        else
+          call pw90common_get_occ_fd(eig, occ_fermi(:, i), fermi_energy_list(i), shc_temp)
+        endif
       end do
     end if
 
@@ -2353,12 +2361,14 @@ contains
 #ifdef OPENMP
 !$OMP       critical (berry_print_progress_critical)
 #endif
-      if (PRESENT(init) .and. init) then
-        ! The length of the array start:step:end
-        ! e.g. 2 for 0:4:7 = [0, 4], 3 for 3:4:11 = [3, 7, 11]
-        tot_k = (stop_k - start_k)/step_k + 1
-        sum_k = 0
-        percentage = 0
+      if (PRESENT(init)) then
+        if (init) then
+          ! The length of the array start:step:end
+          ! e.g. 2 for 0:4:7 = [0, 4], 3 for 3:4:11 = [3, 7, 11]
+          tot_k = (stop_k - start_k)/step_k + 1
+          sum_k = 0
+          percentage = 0
+        endif
       else
         sum_k = sum_k + 1
 
