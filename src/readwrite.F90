@@ -759,7 +759,9 @@ contains
     integer :: ierr
     logical :: found
 
-    if (.not. pw90_effective_model) allocate (kpt_cart(3, num_kpts), stat=ierr)
+    if (pw90_effective_model) return
+
+    allocate (kpt_cart(3, num_kpts), stat=ierr)
     if (ierr /= 0) then
       call set_error_alloc(error, 'Error allocating kpt_cart in w90_readwrite_read_kpoints', comm)
       return

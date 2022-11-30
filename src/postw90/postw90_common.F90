@@ -56,8 +56,8 @@ contains
   !================================================!
 
   subroutine pw90common_wanint_setup(num_wann, print_output, real_lattice, mp_grid, &
-                                     effective_model, wigner_seitz, stdout, seedname, timer, &
-                                     error, comm)
+                                     effective_model, ws_region, ws_distance, wigner_seitz, &
+                                     stdout, seedname, timer, error, comm)
     !================================================!
     !
     !! Setup data ready for interpolation
@@ -66,11 +66,13 @@ contains
 
     use w90_constants, only: dp
     use w90_io, only: io_file_unit, io_stopwatch_start, io_stopwatch_stop
-    use w90_types, only: print_output_type, timer_list_type
+    use w90_types, only: print_output_type, timer_list_type, ws_region_type, ws_distance_type
     use w90_comms, only: mpirank, w90comm_type, comms_bcast
     use w90_postw90_types, only: wigner_seitz_type
 
     type(print_output_type), intent(in) :: print_output
+    type(ws_region_type), intent(inout) :: ws_region
+    type(ws_distance_type), intent(inout) :: ws_distance
     type(wigner_seitz_type), intent(inout) :: wigner_seitz
     type(timer_list_type), intent(inout) :: timer
     type(w90comm_type), intent(in) :: comm
@@ -85,6 +87,12 @@ contains
 
     integer :: ierr, ir, file_unit, num_wann_loc
     logical :: on_root = .false.
+    character(len=100) :: header
+    logical :: ws, new_ir, ndegen_found
+    integer :: io, n, iw, jw, idum, jdum, ivdum(3), ivdum_old(3), ideg
+    real(kind=dp) :: rdum_real, rdum_imag
+    ! from ws_distance.F90:ws_translate_dist, ndegenx = 8
+    integer, parameter :: ndegenx = 8
 
     if (mpirank(comm) == 0) on_root = .true.
 
@@ -152,12 +160,155 @@ contains
         ! Note that 'real_lattice' stores the lattice vectors as *rows*
         wigner_seitz%crvec(:, ir) = matmul(transpose(real_lattice), wigner_seitz%irvec(:, ir))
       end do
+    else
+      ! first read the HH_R.dat to fill the wigner_seitz
+      file_unit = io_file_unit()
+      write (stdout, '(/a)') ' Reading Wigner-Seitz vectors from file ' &
+        //trim(seedname)//'_HH_R.dat'
+      open (file_unit, file=trim(seedname)//'_HH_R.dat', form='formatted', &
+            status='old', err=101)
+      read (file_unit, *) ! header
+      read (file_unit, *) ! num_wann
+      read (file_unit, *) ! nrpts
+
+      ! note although I go through the whole file, the Hamiltonian matrix
+      ! elements are actually parsed inside get_HH_R.
+      ! I parse only the Wigner-Seitz vectors here, to ensure they are consistent
+      ! with that from wsvec.dat.
+      ir = 1
+      new_ir = .true.
+      ivdum_old(:) = 0
+      n = 1
+      do
+        read (file_unit, '(5I5,3x,2(E15.8,1x))', iostat=io) ivdum(1:3), jw, iw, &
+          rdum_real, rdum_imag
+        ! write(stdout, *) ivdum(1:3), jw, iw, rdum_real, rdum_imag
+        if (io < 0) exit ! reached end of file
+        if (n > 1) then
+          if (ivdum(1) /= ivdum_old(1) .or. ivdum(2) /= ivdum_old(2) .or. &
+              ivdum(3) /= ivdum_old(3)) then
+            ir = ir + 1
+            new_ir = .true.
+          else
+            new_ir = .false.
+          endif
+        endif
+        ivdum_old = ivdum
+        if (new_ir) then
+          wigner_seitz%irvec(:, ir) = ivdum(:)
+          if (ivdum(1) == 0 .and. ivdum(2) == 0 .and. ivdum(3) == 0) wigner_seitz%rpt_origin = ir
+        endif
+        n = n + 1
+      enddo
+      close (file_unit)
+
+      if (ir /= wigner_seitz%nrpts) then
+        write (stdout, *) 'ir=', ir, '  nrpts=', wigner_seitz%nrpts
+        write (stdout, *) 'ivdum_old=', ivdum_old, 'ivdum=', ivdum
+        call set_error_fatal(error, 'Error in pw90common_wanint_setup: inconsistent nrpts values', comm)
+        return
+      endif
+
+      do ir = 1, wigner_seitz%nrpts
+        wigner_seitz%crvec(:, ir) = matmul(transpose(real_lattice), wigner_seitz%irvec(:, ir))
+      end do
+
+      inquire (file=trim(seedname)//'_HH_R.dat.ndegen', exist=ndegen_found)
+      if (ndegen_found) then
+        write (stdout, '(/a)') ' Reading degeneracies from file ' &
+          //trim(seedname)//'_HH_R.dat.ndegen'
+        open (file_unit, file=trim(seedname)//'_HH_R.dat.ndegen', form='formatted', &
+              status='old', err=102)
+        read (file_unit, '(15I5)', iostat=io) (wigner_seitz%ndegen(ir), ir=1, wigner_seitz%nrpts)
+        ! write (stdout, *) (wigner_seitz%ndegen(ir), ir=1, wigner_seitz%nrpts)
+        close (file_unit)
+      else
+        ! If nothing there, assume they are 1
+        wigner_seitz%ndegen(:) = 1
+        write (stdout, '(/a)') 'WARNING: no ndegen values found in '//trim(seedname) &
+          //'_HH_R.dat.ndegen, assuming all 1'
+      endif
+
+      ! also try to parse wsvec.dat for MDRS interpolation
+      if (ws_region%use_ws_distance) then
+        write (stdout, '(/a)') ' Reading translation vectors from file ' &
+          //trim(seedname)//'_wsvec.dat'
+        open (file_unit, file=trim(seedname)//'_wsvec.dat', form='formatted', &
+              status='old', err=103)
+        read (file_unit, '(A)') header
+        ! check the wsvec.dat file and input param are consistent
+        ws = index(header, 'use_ws_distance=.true.') > 0
+        if (.not. ws) then
+          call set_error_fatal(error, 'Inconsistent values of use_ws_distance in '//trim(seedname) &
+                               //'_wsvec.dat and '//trim(seedname)//'.win', comm)
+          return
+        endif
+
+        ! allocate arrays
+        allocate (ws_distance%irdist(3, ndegenx, num_wann, num_wann, wigner_seitz%nrpts), stat=ierr)
+        if (ierr /= 0) then
+          call set_error_alloc(error, 'Error in allocating irdist_ws in pw90common_wanint_setup', comm)
+          return
+        endif
+        allocate (ws_distance%crdist(3, ndegenx, num_wann, num_wann, wigner_seitz%nrpts), stat=ierr)
+        if (ierr /= 0) then
+          call set_error_alloc(error, 'Error in allocating crdist_ws in pw90common_wanint_setup', comm)
+          return
+        endif
+        allocate (ws_distance%ndeg(num_wann, num_wann, wigner_seitz%nrpts), stat=ierr)
+        if (ierr /= 0) then
+          call set_error_alloc(error, 'Error in allocating wcenter_ndeg in pw90common_wanint_setup', comm)
+          return
+        endif
+
+        !translation_centre_frac = 0._dp
+        ws_distance%ndeg = 0
+        ws_distance%irdist = 0
+        ws_distance%crdist = 0
+
+        ! read wsvec.dat and store in ws_distance
+        do ir = 1, wigner_seitz%nrpts
+          do iw = 1, num_wann
+            do jw = 1, num_wann
+              read (file_unit, '(5I5)') ivdum(1:3), idum, jdum
+              if (ivdum(1) /= wigner_seitz%irvec(1, ir) .or. &
+                  ivdum(2) /= wigner_seitz%irvec(2, ir) .or. &
+                  ivdum(3) /= wigner_seitz%irvec(3, ir)) then
+                call set_error_fatal(error, 'Inconsistent Wigner-Seitz vectors in '// &
+                                     trim(seedname)//'_wsvec.dat and '//trim(seedname)//'_HH_R.dat', &
+                                     comm)
+                return
+              endif
+              if (idum /= iw .or. jdum /= jw) then
+                call set_error_fatal(error, 'Inconsistent values of iw, jw in '// &
+                                     trim(seedname)//'_wsvec.dat', comm)
+                return
+              endif
+              read (file_unit, '(I5)') ws_distance%ndeg(iw, jw, ir)
+              do ideg = 1, ws_distance%ndeg(iw, jw, ir)
+                read (file_unit, '(5I5,2F12.6,I5)') ivdum(1:3)
+                ws_distance%irdist(:, ideg, iw, jw, ir) = ivdum(:) + wigner_seitz%irvec(:, ir)
+
+                ws_distance%crdist(:, ideg, iw, jw, ir) = matmul(transpose(real_lattice), &
+                                                                 ws_distance%irdist(:, ideg, iw, jw, ir))
+              end do
+            end do
+          end do
+        end do
+        close (file_unit)
+
+        ws_distance%done = .true.
+      end if
     endif
 
     return
 
 101 call set_error_file(error, 'Error in pw90common_wanint_setup: problem opening file '// &
                         trim(seedname)//'_HH_R.dat', comm)
+102 call set_error_file(error, 'Error in pw90common_wanint_setup: problem opening file '// &
+                        trim(seedname)//'_HH_R.dat.ndegen', comm)
+103 call set_error_file(error, 'Error in pw90common_wanint_setup: problem opening file '// &
+                        trim(seedname)//'_wsvec.dat', comm)
     return !jj fixme restructure
 
   end subroutine pw90common_wanint_setup

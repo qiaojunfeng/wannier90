@@ -95,6 +95,8 @@ contains
     complex(kind=dp), allocatable :: sciss_R(:, :, :)
 
     logical :: on_root = .false.
+    logical :: ndegen_found
+
     if (mpirank(comm) == 0) on_root = .true.
 
     if (print_output%timing_level > 1 .and. print_output%iprint > 0) &
@@ -126,7 +128,7 @@ contains
         ivdum_old(:) = 0
         n = 1
         do
-          read (file_unit, '(5I5,2F12.6)', iostat=io) ivdum(1:3), j, i, &
+          read (file_unit, '(5I5,3x,2(E15.8,1x))', iostat=io) ivdum(1:3), j, i, &
             rdum_real, rdum_imag
           if (io < 0) exit ! reached end of file
           if (i < 1 .or. i > num_wann .or. j < 1 .or. j > num_wann) then
@@ -165,7 +167,25 @@ contains
         do ir = 1, wigner_seitz%nrpts
           wigner_seitz%crvec(:, ir) = matmul(transpose(real_lattice), wigner_seitz%irvec(:, ir))
         end do
-        wigner_seitz%ndegen(:) = 1 ! This is assumed when reading HH_R from file
+
+        ! note to use ws_distance interpolation, I need to read the degeneracy
+        ! of R vectors from seedname_HH_R.dat.ndegen, and also wsvec.dat file,
+        ! this is done inside postw90_common.F90:pw90common_wanint_setup subroutine
+        inquire (file=trim(seedname)//'_HH_R.dat.ndegen', exist=ndegen_found)
+        if (ndegen_found) then
+          write (stdout, '(/a)') ' Reading degeneracies from file ' &
+            //trim(seedname)//'_HH_R.dat.ndegen'
+          open (file_unit, file=trim(seedname)//'_HH_R.dat.ndegen', form='formatted', &
+                status='old', err=101)
+          read (file_unit, '(15I5)', iostat=io) (wigner_seitz%ndegen(ir), ir=1, wigner_seitz%nrpts)
+          close (file_unit)
+        else
+          ! If nothing there, assume they are 1
+          wigner_seitz%ndegen(:) = 1
+          write (stdout, '(/a)') 'WARNING: no ndegen values found in '//trim(seedname) &
+            //'_HH_R.dat.ndegen, assuming all 1'
+        endif
+
         !
         ! TODO: Implement scissors in this case? Need to choose a
         ! uniform k-mesh (the scissors correction is applied in
