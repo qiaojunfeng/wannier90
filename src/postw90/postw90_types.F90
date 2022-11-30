@@ -229,6 +229,8 @@ module w90_postw90_types
     real(kind=dp) :: temp_step
     type(kmesh_spacing_type) :: kmesh
     real(kind=dp) :: tdf_energy_step
+    real(kind=dp) :: tdf_energy_min
+    real(kind=dp) :: tdf_energy_max
     type(pw90_smearing_type) :: tdf_smearing ! TDF_smr_index and TDF_smr_fixed_en_width
     real(kind=dp) :: relax_time
     logical :: bandshift

@@ -1058,6 +1058,8 @@ contains
     call w90_readwrite_get_keyword('boltz_mu_step', found, error, comm)
     call w90_readwrite_get_keyword('boltz_relax_time', found, error, comm)
     call w90_readwrite_get_keyword('boltz_tdf_energy_step', found, error, comm)
+    call w90_readwrite_get_keyword('boltz_tdf_energy_max', found, error, comm)
+    call w90_readwrite_get_keyword('boltz_tdf_energy_min', found, error, comm)
     call w90_readwrite_get_keyword('boltz_tdf_smr_fixed_en_width', found, error, comm)
     call w90_readwrite_get_keyword('boltz_tdf_smr_type', found, error, comm)
     call w90_readwrite_get_keyword('boltz_temp_max', found, error, comm)

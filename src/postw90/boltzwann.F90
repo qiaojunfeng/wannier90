@@ -264,7 +264,7 @@ contains
     ! I also add 3 times the smearing on each side of the TDF energy array to take into account also possible smearing effects,
     ! or at least 0.2 eV
     TDF_exceeding_energy = max(TDF_exceeding_energy_times_smr*pw90_boltzwann%tdf_smearing%fixed_width, 0.2_dp)
-    TDFEnergyNumPoints = int(floor((dis_manifold%win_max - dis_manifold%win_min &
+    TDFEnergyNumPoints = int(floor((pw90_boltzwann%tdf_energy_max - pw90_boltzwann%tdf_energy_min &
                                     + 2._dp*TDF_exceeding_energy)/pw90_boltzwann%tdf_energy_step)) + 1
     if (TDFEnergyNumPoints .eq. 1) TDFEnergyNumPoints = 2
     allocate (TDFEnergyArray(TDFEnergyNumPoints), stat=ierr)
@@ -273,7 +273,7 @@ contains
       return
     endif
     do i = 1, TDFEnergyNumPoints
-      TDFEnergyArray(i) = dis_manifold%win_min - TDF_exceeding_energy &
+      TDFEnergyArray(i) = pw90_boltzwann%tdf_energy_min - TDF_exceeding_energy &
                           + real(i - 1, dp)*pw90_boltzwann%tdf_energy_step
     end do
 

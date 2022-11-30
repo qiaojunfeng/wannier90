@@ -761,6 +761,10 @@ contains
     if (allocated(error)) return
     call comms_bcast(pw90_boltzwann%tdf_energy_step, 1, error, comm)
     if (allocated(error)) return
+    call comms_bcast(pw90_boltzwann%tdf_energy_min, 1, error, comm)
+    if (allocated(error)) return
+    call comms_bcast(pw90_boltzwann%tdf_energy_max, 1, error, comm)
+    if (allocated(error)) return
     call comms_bcast(pw90_boltzwann%relax_time, 1, error, comm)
     if (allocated(error)) return
     call comms_bcast(pw90_boltzwann%tdf_smearing%use_adaptive, 1, error, comm)

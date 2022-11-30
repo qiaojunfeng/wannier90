@@ -222,7 +222,7 @@ contains
     if (allocated(error)) return
     call w90_wannier90_readwrite_read_geninterp(pw90_geninterp, error, comm)
     if (allocated(error)) return
-    call w90_wannier90_readwrite_read_boltzwann(pw90_boltzwann, eigval, pw90_extra_io%smear, &
+    call w90_wannier90_readwrite_read_boltzwann(pw90_boltzwann, dis_manifold, eigval, pw90_extra_io%smear, &
                                                 pw90_calculation%boltzwann, &
                                                 pw90_extra_io%boltz_2d_dir, error, comm)
     if (allocated(error)) return
@@ -1214,7 +1214,7 @@ contains
   end subroutine w90_wannier90_readwrite_read_geninterp
 
   !================================================!
-  subroutine w90_wannier90_readwrite_read_boltzwann(pw90_boltzwann, eigval, pw90_smearing, &
+  subroutine w90_wannier90_readwrite_read_boltzwann(pw90_boltzwann, dis_manifold, eigval, pw90_smearing, &
                                                     do_boltzwann, boltz_2d_dir, error, comm)
     !================================================!
     ! [gp-begin, Jun 1, 2012]
@@ -1226,6 +1226,7 @@ contains
 
     implicit none
     type(pw90_boltzwann_type), intent(inout) :: pw90_boltzwann
+    type(dis_manifold_type), intent(in) :: dis_manifold
     type(pw90_smearing_type), intent(in) :: pw90_smearing
     type(w90_error_type), allocatable, intent(out) :: error
     type(w90comm_type), intent(in) :: comm
@@ -1414,6 +1415,19 @@ contains
     if (allocated(error)) return
     if (pw90_boltzwann%tdf_energy_step <= 0._dp) then
       call set_error_input(error, 'Error: boltz_tdf_energy_step must be greater than zero', comm)
+      return
+    endif
+
+    pw90_boltzwann%tdf_energy_min = dis_manifold%win_min
+    call w90_readwrite_get_keyword('boltz_tdf_energy_min', found, error, comm, &
+                                   r_value=pw90_boltzwann%tdf_energy_min)
+    if (allocated(error)) return
+    pw90_boltzwann%tdf_energy_max = dis_manifold%win_max
+    call w90_readwrite_get_keyword('boltz_tdf_energy_max', found, error, comm, &
+                                   r_value=pw90_boltzwann%tdf_energy_max)
+    if (allocated(error)) return
+    if (pw90_boltzwann%tdf_energy_max <= pw90_boltzwann%tdf_energy_min) then
+      call set_error_input(error, 'Error: boltz_tdf_energy_max must be greater than boltz_tdf_energy_min', comm)
       return
     endif
 
@@ -2330,6 +2344,10 @@ contains
             , pw90_boltzwann%kmesh%mesh(1), 'x', pw90_boltzwann%kmesh%mesh(2), 'x', pw90_boltzwann%kmesh%mesh(3), '|'
         endif
       endif
+      write (stdout, '(1x,a46,10x,f8.3,13x,a1)') '|  Minimum energy range for TDF              :', &
+        pw90_boltzwann%tdf_energy_min, '|'
+      write (stdout, '(1x,a46,10x,f8.3,13x,a1)') '|  Maximum energy range for TDF              :', &
+        pw90_boltzwann%tdf_energy_max, '|'
       write (stdout, '(1x,a46,10x,f8.3,13x,a1)') '|  Step size for TDF (eV)                    :', &
         pw90_boltzwann%tdf_energy_step, '|'
       write (stdout, '(1x,a25,5x,a43,4x,a1)') '|  TDF Smearing Function ', &
@@ -2479,7 +2497,7 @@ contains
                              pw90_boltzwann%temp_step)) + 1 ! temperature array
       NumPoints2 = int(floor((pw90_boltzwann%mu_max - pw90_boltzwann%mu_min)/ &
                              pw90_boltzwann%mu_step)) + 1  ! mu array
-      NumPoints3 = int(floor((dis_manifold%win_max - dis_manifold%win_min &
+      NumPoints3 = int(floor((pw90_boltzwann%tdf_energy_max - pw90_boltzwann%tdf_energy_min &
                               + 2._dp*TDF_exceeding_energy)/ &
                              pw90_boltzwann%tdf_energy_step)) + 1 ! tdfenergyarray
       mem_bw = mem_bw + NumPoints1*size_real                         !TempArray
