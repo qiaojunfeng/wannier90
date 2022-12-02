@@ -208,6 +208,8 @@ contains
       if (allocated(error)) return
       call comms_bcast(wigner_seitz%crvec(1, 1), 3*wigner_seitz%nrpts, error, comm)
       if (allocated(error)) return
+      call comms_bcast(wigner_seitz%rpt_origin, 1, error, comm)
+      if (allocated(error)) return
       if (print_output%timing_level > 1 .and. print_output%iprint > 0) &
         call io_stopwatch_stop('get_oper: get_HH_R', timer)
       return

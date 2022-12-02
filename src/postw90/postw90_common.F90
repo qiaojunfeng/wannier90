@@ -162,87 +162,101 @@ contains
       end do
     else
       ! first read the HH_R.dat to fill the wigner_seitz
-      file_unit = io_file_unit()
-      write (stdout, '(/a)') ' Reading Wigner-Seitz vectors from file ' &
-        //trim(seedname)//'_HH_R.dat'
-      open (file_unit, file=trim(seedname)//'_HH_R.dat', form='formatted', &
-            status='old', err=101)
-      read (file_unit, *) ! header
-      read (file_unit, *) ! num_wann
-      read (file_unit, *) ! nrpts
+      if (on_root) then ! TODO
+        file_unit = io_file_unit()
+        write (stdout, '(/a)') ' Reading Wigner-Seitz vectors from file ' &
+          //trim(seedname)//'_HH_R.dat'
+        open (file_unit, file=trim(seedname)//'_HH_R.dat', form='formatted', &
+              status='old', err=101)
+        read (file_unit, *) ! header
+        read (file_unit, *) ! num_wann
+        read (file_unit, *) ! nrpts
 
-      ! note although I go through the whole file, the Hamiltonian matrix
-      ! elements are actually parsed inside get_HH_R.
-      ! I parse only the Wigner-Seitz vectors here, to ensure they are consistent
-      ! with that from wsvec.dat.
-      ir = 1
-      new_ir = .true.
-      ivdum_old(:) = 0
-      n = 1
-      do
-        read (file_unit, '(5I5,3x,2(E15.8,1x))', iostat=io) ivdum(1:3), jw, iw, &
-          rdum_real, rdum_imag
-        ! write(stdout, *) ivdum(1:3), jw, iw, rdum_real, rdum_imag
-        if (io < 0) exit ! reached end of file
-        if (n > 1) then
-          if (ivdum(1) /= ivdum_old(1) .or. ivdum(2) /= ivdum_old(2) .or. &
-              ivdum(3) /= ivdum_old(3)) then
-            ir = ir + 1
-            new_ir = .true.
-          else
-            new_ir = .false.
+        ! note although I go through the whole file, the Hamiltonian matrix
+        ! elements are actually parsed inside get_HH_R.
+        ! I parse only the Wigner-Seitz vectors here, to ensure they are consistent
+        ! with that from wsvec.dat.
+        ir = 1
+        new_ir = .true.
+        ivdum_old(:) = 0
+        n = 1
+        do
+          read (file_unit, '(5I5,3x,2(E15.8,1x))', iostat=io) ivdum(1:3), jw, iw, &
+            rdum_real, rdum_imag
+          ! write(stdout, *) ivdum(1:3), jw, iw, rdum_real, rdum_imag
+          if (io < 0) exit ! reached end of file
+          if (n > 1) then
+            if (ivdum(1) /= ivdum_old(1) .or. ivdum(2) /= ivdum_old(2) .or. &
+                ivdum(3) /= ivdum_old(3)) then
+              ir = ir + 1
+              new_ir = .true.
+            else
+              new_ir = .false.
+            endif
           endif
-        endif
-        ivdum_old = ivdum
-        if (new_ir) then
-          wigner_seitz%irvec(:, ir) = ivdum(:)
-          if (ivdum(1) == 0 .and. ivdum(2) == 0 .and. ivdum(3) == 0) wigner_seitz%rpt_origin = ir
-        endif
-        n = n + 1
-      enddo
-      close (file_unit)
-
-      if (ir /= wigner_seitz%nrpts) then
-        write (stdout, *) 'ir=', ir, '  nrpts=', wigner_seitz%nrpts
-        write (stdout, *) 'ivdum_old=', ivdum_old, 'ivdum=', ivdum
-        call set_error_fatal(error, 'Error in pw90common_wanint_setup: inconsistent nrpts values', comm)
-        return
-      endif
-
-      do ir = 1, wigner_seitz%nrpts
-        wigner_seitz%crvec(:, ir) = matmul(transpose(real_lattice), wigner_seitz%irvec(:, ir))
-      end do
-
-      inquire (file=trim(seedname)//'_HH_R.dat.ndegen', exist=ndegen_found)
-      if (ndegen_found) then
-        write (stdout, '(/a)') ' Reading degeneracies from file ' &
-          //trim(seedname)//'_HH_R.dat.ndegen'
-        open (file_unit, file=trim(seedname)//'_HH_R.dat.ndegen', form='formatted', &
-              status='old', err=102)
-        read (file_unit, '(15I5)', iostat=io) (wigner_seitz%ndegen(ir), ir=1, wigner_seitz%nrpts)
-        ! write (stdout, *) (wigner_seitz%ndegen(ir), ir=1, wigner_seitz%nrpts)
+          ivdum_old = ivdum
+          if (new_ir) then
+            wigner_seitz%irvec(:, ir) = ivdum(:)
+            if (ivdum(1) == 0 .and. ivdum(2) == 0 .and. ivdum(3) == 0) wigner_seitz%rpt_origin = ir
+          endif
+          n = n + 1
+        enddo
         close (file_unit)
-      else
-        ! If nothing there, assume they are 1
-        wigner_seitz%ndegen(:) = 1
-        write (stdout, '(/a)') 'WARNING: no ndegen values found in '//trim(seedname) &
-          //'_HH_R.dat.ndegen, assuming all 1'
-      endif
+
+        if (ir /= wigner_seitz%nrpts) then
+          write (stdout, *) 'ir=', ir, '  nrpts=', wigner_seitz%nrpts
+          write (stdout, *) 'ivdum_old=', ivdum_old, 'ivdum=', ivdum
+          call set_error_fatal(error, 'Error in pw90common_wanint_setup: inconsistent nrpts values', comm)
+          return
+        endif
+
+        do ir = 1, wigner_seitz%nrpts
+          wigner_seitz%crvec(:, ir) = matmul(transpose(real_lattice), wigner_seitz%irvec(:, ir))
+        end do
+
+        inquire (file=trim(seedname)//'_HH_R.dat.ndegen', exist=ndegen_found)
+        if (ndegen_found) then
+          write (stdout, '(/a)') ' Reading degeneracies from file ' &
+            //trim(seedname)//'_HH_R.dat.ndegen'
+          open (file_unit, file=trim(seedname)//'_HH_R.dat.ndegen', form='formatted', &
+                status='old', err=102)
+          read (file_unit, '(15I5)', iostat=io) (wigner_seitz%ndegen(ir), ir=1, wigner_seitz%nrpts)
+          ! write (stdout, *) (wigner_seitz%ndegen(ir), ir=1, wigner_seitz%nrpts)
+          close (file_unit)
+        else
+          ! If nothing there, assume they are 1
+          wigner_seitz%ndegen(:) = 1
+          write (stdout, '(/a)') 'WARNING: no ndegen values found in '//trim(seedname) &
+            //'_HH_R.dat.ndegen, assuming all 1'
+        endif
+
+      endif ! on_root
+
+      call comms_bcast(wigner_seitz%ndegen(1), wigner_seitz%nrpts, error, comm)
+      if (allocated(error)) return
+      call comms_bcast(wigner_seitz%irvec(1, 1), 3*wigner_seitz%nrpts, error, comm)
+      if (allocated(error)) return
+      call comms_bcast(wigner_seitz%crvec(1, 1), 3*wigner_seitz%nrpts, error, comm)
+      if (allocated(error)) return
+      call comms_bcast(wigner_seitz%rpt_origin, 1, error, comm)
+      if (allocated(error)) return
 
       ! also try to parse wsvec.dat for MDRS interpolation
       if (ws_region%use_ws_distance) then
-        write (stdout, '(/a)') ' Reading translation vectors from file ' &
-          //trim(seedname)//'_wsvec.dat'
-        open (file_unit, file=trim(seedname)//'_wsvec.dat', form='formatted', &
-              status='old', err=103)
-        read (file_unit, '(A)') header
-        ! check the wsvec.dat file and input param are consistent
-        ws = index(header, 'use_ws_distance=.true.') > 0
-        if (.not. ws) then
-          call set_error_fatal(error, 'Inconsistent values of use_ws_distance in '//trim(seedname) &
-                               //'_wsvec.dat and '//trim(seedname)//'.win', comm)
-          return
-        endif
+        if (on_root) then
+          write (stdout, '(/a)') ' Reading translation vectors from file ' &
+            //trim(seedname)//'_wsvec.dat'
+          open (file_unit, file=trim(seedname)//'_wsvec.dat', form='formatted', &
+                status='old', err=103)
+          read (file_unit, '(A)') header
+          ! check the wsvec.dat file and input param are consistent
+          ws = index(header, 'use_ws_distance=.true.') > 0
+          if (.not. ws) then
+            call set_error_fatal(error, 'Inconsistent values of use_ws_distance in '//trim(seedname) &
+                                 //'_wsvec.dat and '//trim(seedname)//'.win', comm)
+            return
+          endif
+        endif ! on_root
 
         ! allocate arrays
         allocate (ws_distance%irdist(3, ndegenx, num_wann, num_wann, wigner_seitz%nrpts), stat=ierr)
@@ -267,37 +281,51 @@ contains
         ws_distance%crdist = 0
 
         ! read wsvec.dat and store in ws_distance
-        do ir = 1, wigner_seitz%nrpts
-          do iw = 1, num_wann
-            do jw = 1, num_wann
-              read (file_unit, '(5I5)') ivdum(1:3), idum, jdum
-              if (ivdum(1) /= wigner_seitz%irvec(1, ir) .or. &
-                  ivdum(2) /= wigner_seitz%irvec(2, ir) .or. &
-                  ivdum(3) /= wigner_seitz%irvec(3, ir)) then
-                call set_error_fatal(error, 'Inconsistent Wigner-Seitz vectors in '// &
-                                     trim(seedname)//'_wsvec.dat and '//trim(seedname)//'_HH_R.dat', &
-                                     comm)
-                return
-              endif
-              if (idum /= iw .or. jdum /= jw) then
-                call set_error_fatal(error, 'Inconsistent values of iw, jw in '// &
-                                     trim(seedname)//'_wsvec.dat', comm)
-                return
-              endif
-              read (file_unit, '(I5)') ws_distance%ndeg(iw, jw, ir)
-              do ideg = 1, ws_distance%ndeg(iw, jw, ir)
-                read (file_unit, '(5I5,2F12.6,I5)') ivdum(1:3)
-                ws_distance%irdist(:, ideg, iw, jw, ir) = ivdum(:) + wigner_seitz%irvec(:, ir)
+        if (on_root) then
+          do ir = 1, wigner_seitz%nrpts
+            do iw = 1, num_wann
+              do jw = 1, num_wann
+                read (file_unit, '(5I5)') ivdum(1:3), idum, jdum
+                if (ivdum(1) /= wigner_seitz%irvec(1, ir) .or. &
+                    ivdum(2) /= wigner_seitz%irvec(2, ir) .or. &
+                    ivdum(3) /= wigner_seitz%irvec(3, ir)) then
+                  call set_error_fatal(error, 'Inconsistent Wigner-Seitz vectors in '// &
+                                       trim(seedname)//'_wsvec.dat and '//trim(seedname)//'_HH_R.dat', &
+                                       comm)
+                  return
+                endif
+                if (idum /= iw .or. jdum /= jw) then
+                  call set_error_fatal(error, 'Inconsistent values of iw, jw in '// &
+                                       trim(seedname)//'_wsvec.dat', comm)
+                  return
+                endif
+                read (file_unit, '(I5)') ws_distance%ndeg(iw, jw, ir)
+                do ideg = 1, ws_distance%ndeg(iw, jw, ir)
+                  read (file_unit, '(3I5)') ivdum(1:3)
+                  ws_distance%irdist(:, ideg, iw, jw, ir) = ivdum(:) + wigner_seitz%irvec(:, ir)
 
-                ws_distance%crdist(:, ideg, iw, jw, ir) = matmul(transpose(real_lattice), &
-                                                                 ws_distance%irdist(:, ideg, iw, jw, ir))
+                  ws_distance%crdist(:, ideg, iw, jw, ir) = matmul(transpose(real_lattice), &
+                                                                   ws_distance%irdist(:, ideg, iw, jw, ir))
+                end do
               end do
             end do
           end do
-        end do
-        close (file_unit)
+          close (file_unit)
 
-        ws_distance%done = .true.
+          ws_distance%done = .true.
+        endif ! on_root
+
+        call comms_bcast(ws_distance%irdist(1, 1, 1, 1, 1), &
+                         3*ndegenx*num_wann*num_wann*wigner_seitz%nrpts, error, comm)
+        if (allocated(error)) return
+        call comms_bcast(ws_distance%crdist(1, 1, 1, 1, 1), &
+                         3*ndegenx*num_wann*num_wann*wigner_seitz%nrpts, error, comm)
+        if (allocated(error)) return
+        call comms_bcast(ws_distance%ndeg(1, 1, 1), num_wann*num_wann*wigner_seitz%nrpts, error, comm)
+        if (allocated(error)) return
+        call comms_bcast(ws_distance%done, 1, error, comm)
+        if (allocated(error)) return
+
       end if
     endif
 
