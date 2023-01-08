@@ -412,6 +412,10 @@ program wannier
     if (allocated(error)) call prterr(error, stdout, stderr, comm)
     if (on_root) write (stdout, '(1x,a25,f11.3,a)') 'Time to write kmesh      ', io_time(), ' (sec)'
     if (on_root) write (stdout, '(/a)') ' Exiting... '//trim(seedname)//'.nnkp written.'
+    if (on_root) then
+      close (stdout)
+      close (stderr, status='delete') ! this should not be unit 0
+    endif
 #ifdef MPI
     call mpi_finalize(ierr)
 #endif
@@ -646,4 +650,3 @@ contains
   end subroutine prterr
 
 end program wannier
-
