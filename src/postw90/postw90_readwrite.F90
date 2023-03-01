@@ -1431,6 +1431,29 @@ contains
       return
     endif
 
+    pw90_boltzwann%tdf_smearing%use_adaptive = pw90_smearing%use_adaptive
+    call w90_readwrite_get_keyword('boltz_tdf_adpt_smr', found, error, comm, &
+                                   l_value=pw90_boltzwann%tdf_smearing%use_adaptive)
+    if (allocated(error)) return
+
+    pw90_boltzwann%tdf_smearing%adaptive_prefactor = pw90_smearing%adaptive_prefactor
+    call w90_readwrite_get_keyword('boltz_tdf_adpt_smr_fac', found, error, comm, &
+                                   r_value=pw90_boltzwann%tdf_smearing%adaptive_prefactor)
+    if (allocated(error)) return
+    if (found .and. (pw90_boltzwann%tdf_smearing%adaptive_prefactor <= 0._dp)) then
+      call set_error_input(error, 'Error: boltz_tdf_adpt_smr_fac must be greater than zero', comm)
+      return
+    endif
+
+    pw90_boltzwann%tdf_smearing%adaptive_max_width = pw90_smearing%adaptive_max_width
+    call w90_readwrite_get_keyword('boltz_tdf_adpt_smr_max', found, error, comm, &
+                                   r_value=pw90_boltzwann%tdf_smearing%adaptive_max_width)
+    if (allocated(error)) return
+    if (pw90_boltzwann%tdf_smearing%adaptive_max_width <= 0._dp) then
+      call set_error_input(error, 'Error: boltz_tdf_adpt_smr_max must be greater than zero', comm)
+      return
+    endif
+
     ! For TDF: TDF smeared in a NON-adaptive way; value in eV, default = 0._dp
     ! (i.e., no smearing)
     pw90_boltzwann%tdf_smearing%fixed_width = pw90_smearing%fixed_width
@@ -2350,13 +2373,26 @@ contains
         pw90_boltzwann%tdf_energy_max, '|'
       write (stdout, '(1x,a46,10x,f8.3,13x,a1)') '|  Step size for TDF (eV)                    :', &
         pw90_boltzwann%tdf_energy_step, '|'
-      write (stdout, '(1x,a25,5x,a43,4x,a1)') '|  TDF Smearing Function ', &
-        trim(w90_readwrite_get_smearing_type(pw90_boltzwann%tdf_smearing%type_index)), '|'
-      if (pw90_boltzwann%tdf_smearing%fixed_width > 0.0_dp) then
-        write (stdout, '(1x,a46,10x,f8.3,13x,a1)') &
-          '|  TDF fixed Smearing width (eV)             :', pw90_boltzwann%tdf_smearing%fixed_width, '|'
+      if (pw90_boltzwann%tdf_smearing%use_adaptive .eqv. pw90_extra_io%smear%use_adaptive .and. &
+          pw90_boltzwann%tdf_smearing%adaptive_prefactor == pw90_extra_io%smear%adaptive_prefactor &
+          .and. pw90_boltzwann%tdf_smearing%adaptive_max_width == pw90_extra_io%smear%adaptive_max_width &
+          .and. pw90_boltzwann%tdf_smearing%fixed_width == pw90_extra_io%smear%fixed_width .and. &
+          pw90_extra_io%smear%type_index == pw90_boltzwann%tdf_smearing%type_index) then
+        write (stdout, '(1x,a78)') '|  Using global smearing parameters                                          |'
       else
-        write (stdout, '(1x,a78)') '|  TDF fixed Smearing width                  :         unsmeared             |'
+        if (pw90_boltzwann%tdf_smearing%use_adaptive) then
+          write (stdout, '(1x,a46,10x,a8,13x,a1)') '|  TDF Adaptive width smearing               :', '       T', '|'
+          write (stdout, '(1x,a46,10x,f8.3,13x,a1)') &
+            '|  TDF Adaptive smearing factor              :', pw90_boltzwann%tdf_smearing%adaptive_prefactor, '|'
+          write (stdout, '(1x,a46,10x,f8.3,13x,a1)') &
+            '|  TDF Maximum allowed smearing width        :', pw90_boltzwann%tdf_smearing%adaptive_max_width, '|'
+        else
+          write (stdout, '(1x,a46,10x,a8,13x,a1)') '|  TDF Fixed width smearing                  :', '       T', '|'
+          write (stdout, '(1x,a46,10x,f8.3,13x,a1)') '|  TDF Smearing width                         :', &
+            pw90_boltzwann%tdf_smearing%fixed_width, '|'
+        endif
+        write (stdout, '(1x,a21,5x,a47,4x,a1)') '|  Smearing Function ', &
+          trim(w90_readwrite_get_smearing_type(pw90_boltzwann%tdf_smearing%type_index)), '|'
       endif
       write (stdout, '(1x,a46,10x,L8,13x,a1)') '|  Compute DOS at same time                  :', pw90_boltzwann%calc_also_dos, '|'
       if (pw90_boltzwann%calc_also_dos .and. print_output%iprint > 2) then

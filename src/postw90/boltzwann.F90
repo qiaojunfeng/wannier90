@@ -1008,15 +1008,18 @@ contains
     end if
 
     if (on_root .and. (print_output%iprint > 1)) then
-      if (pw90_boltzwann%tdf_smearing%fixed_width/(TDFEnergyArray(2) - TDFEnergyArray(1)) &
-          < min_smearing_binwidth_ratio) then
-        write (stdout, '(5X,A)') "Smearing for TDF: "
-        write (stdout, '(7X,A)') "Unsmeared (use smearing width larger than bin width to smear)"
+      write (stdout, '(5X,A)') "Smearing for TDF: "
+      if (pw90_boltzwann%tdf_smearing%use_adaptive) then
+        write (stdout, '(7X,A)') trim(w90_readwrite_get_smearing_type(pw90_boltzwann%tdf_smearing%type_index))//", adaptive"
       else
-        write (stdout, '(5X,A)') "Smearing for TDF: "
-        write (stdout, '(7X,A,G18.10)') &
-          trim(w90_readwrite_get_smearing_type(pw90_boltzwann%tdf_smearing%type_index))//", non-adaptive, width (eV) =", &
-          pw90_boltzwann%tdf_smearing%fixed_width
+        if (pw90_boltzwann%tdf_smearing%fixed_width/(TDFEnergyArray(2) - TDFEnergyArray(1)) &
+            < min_smearing_binwidth_ratio) then
+          write (stdout, '(7X,A)') "Unsmeared (use smearing width larger than bin width to smear)"
+        else
+          write (stdout, '(7X,A,G18.10)') &
+            trim(w90_readwrite_get_smearing_type(pw90_boltzwann%tdf_smearing%type_index))//", non-adaptive, width (eV) =", &
+            pw90_boltzwann%tdf_smearing%fixed_width
+        end if
       end if
     end if
 
@@ -1076,43 +1079,51 @@ contains
                    num_wann, num_elec_per_state, spin_decomp, error, comm)
       if (allocated(error)) return
 
-      ! As above, the sum of TDF_k * kweight amounts to calculate
-      ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
-      ! so that we divide by the cell_volume (in Angstrom^3) to have
-      ! the correct integral
-      TDF = TDF + TDF_k*kweight/cell_volume
+      if ((pw90_boltzwann%tdf_smearing%use_adaptive) .or. &
+          ((pw90_boltzwann%calc_also_dos) .and. (pw90_boltzwann%dos_smearing%use_adaptive))) then
 
-      ! DOS part !
+        ! This may happen if at least one band has zero derivative (along all three directions)
+        ! Then I substitute this point with its 8 neighbors (+/- 1/4 of the spacing with the next point on the grid
+        ! on each of the three directions)
+        min_spacing = min(min_spacing, minval(abs(levelspacing_k)))
+        max_spacing = max(max_spacing, maxval(abs(levelspacing_k)))
+        if (any(abs(levelspacing_k) < SPACING_THRESHOLD)) then
+          orig_kpt = kpt
+          NumPtsRefined = NumPtsRefined + 1
+          do i = -1, 1, 2
+            do j = -1, 1, 2
+              do k = -1, 1, 2
+                kpt = orig_kpt + &
+                      (/real(i, kind=dp)/real(pw90_boltzwann%kmesh%mesh(1), dp)/4._dp, &
+                        real(j, kind=dp)/real(pw90_boltzwann%kmesh%mesh(2), dp)/4._dp, &
+                        real(k, kind=dp)/real(pw90_boltzwann%kmesh%mesh(3), dp)/4._dp/)
+                call wham_get_eig_deleig(dis_manifold, kpt_latt, pw90_band_deriv_degen, &
+                                         ws_region, print_output, wannier_data, ws_distance, &
+                                         wigner_seitz, delHH, HH, HH_R, u_matrix, UU, v_matrix, &
+                                         del_eig, eig, eigval, kpt, real_lattice, &
+                                         scissors_shift, mp_grid, num_bands, num_kpts, num_wann, &
+                                         num_valence_bands, effective_model, have_disentangled, &
+                                         seedname, stdout, timer, error, comm)
+                if (allocated(error)) return
 
-      if (pw90_boltzwann%calc_also_dos) then
-        if (pw90_boltzwann%dos_smearing%use_adaptive) then
+                call dos_get_levelspacing(del_eig, pw90_boltzwann%kmesh%mesh, levelspacing_k, &
+                                          num_wann, recip_lattice)
 
-          ! This may happen if at least one band has zero derivative (along all three directions)
-          ! Then I substitute this point with its 8 neighbors (+/- 1/4 of the spacing with the next point on the grid
-          ! on each of the three directions)
-          min_spacing = min(min_spacing, minval(abs(levelspacing_k)))
-          max_spacing = max(max_spacing, maxval(abs(levelspacing_k)))
-          if (any(abs(levelspacing_k) < SPACING_THRESHOLD)) then
-            orig_kpt = kpt
-            NumPtsRefined = NumPtsRefined + 1
-            do i = -1, 1, 2
-              do j = -1, 1, 2
-                do k = -1, 1, 2
-                  kpt = orig_kpt + &
-                        (/real(i, kind=dp)/real(pw90_boltzwann%kmesh%mesh(1), dp)/4._dp, &
-                          real(j, kind=dp)/real(pw90_boltzwann%kmesh%mesh(2), dp)/4._dp, &
-                          real(k, kind=dp)/real(pw90_boltzwann%kmesh%mesh(3), dp)/4._dp/)
-                  call wham_get_eig_deleig(dis_manifold, kpt_latt, pw90_band_deriv_degen, &
-                                           ws_region, print_output, wannier_data, ws_distance, &
-                                           wigner_seitz, delHH, HH, HH_R, u_matrix, UU, v_matrix, &
-                                           del_eig, eig, eigval, kpt, real_lattice, &
-                                           scissors_shift, mp_grid, num_bands, num_kpts, num_wann, &
-                                           num_valence_bands, effective_model, have_disentangled, &
-                                           seedname, stdout, timer, error, comm)
+                if (pw90_boltzwann%tdf_smearing%use_adaptive) then
+                  call TDF_kpt(pw90_boltzwann, ws_region, pw90_spin, wannier_data, ws_distance, wigner_seitz, &
+                               HH_R, SS_R, del_eig, eig, TDFEnergyArray, kpt, real_lattice, TDF_k, mp_grid, &
+                               num_wann, num_elec_per_state, spin_decomp, error, comm, levelspacing_k=levelspacing_k)
                   if (allocated(error)) return
 
-                  call dos_get_levelspacing(del_eig, pw90_boltzwann%kmesh%mesh, levelspacing_k, &
-                                            num_wann, recip_lattice)
+                  ! As above, the sum of TDF_k * kweight amounts to calculate
+                  ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
+                  ! so that we divide by the cell_volume (in Angstrom^3) to have
+                  ! the correct integral
+                  ! I divide by 8 because I'm substituting a point with its 8 neighbors
+                  TDF = TDF + TDF_k*kweight/cell_volume/8.
+                end if
+
+                if ((pw90_boltzwann%calc_also_dos) .and. (pw90_boltzwann%dos_smearing%use_adaptive)) then
                   call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
                                  num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, &
                                  spin_decomp, pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
@@ -1122,10 +1133,22 @@ contains
 
                   ! I divide by 8 because I'm substituting a point with its 8 neighbors
                   dos_all = dos_all + dos_k*kweight/8.
-                end do
+                end if
+
               end do
             end do
-          else
+          end do
+        else
+
+          if (pw90_boltzwann%tdf_smearing%use_adaptive) then
+            ! As above, the sum of TDF_k * kweight amounts to calculate
+            ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
+            ! so that we divide by the cell_volume (in Angstrom^3) to have
+            ! the correct integral
+            TDF = TDF + TDF_k*kweight/cell_volume
+          end if
+
+          if ((pw90_boltzwann%calc_also_dos) .and. (pw90_boltzwann%dos_smearing%use_adaptive)) then
             call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
                            num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, spin_decomp, &
                            pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
@@ -1134,7 +1157,37 @@ contains
 
             dos_all = dos_all + dos_k*kweight
           end if
-        else
+        end if
+
+        if (.not. pw90_boltzwann%tdf_smearing%use_adaptive) then
+          ! As above, the sum of TDF_k * kweight amounts to calculate
+          ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
+          ! so that we divide by the cell_volume (in Angstrom^3) to have
+          ! the correct integral
+          TDF = TDF + TDF_k*kweight/cell_volume
+        end if
+
+        if (pw90_boltzwann%calc_also_dos .and. (.not. pw90_boltzwann%dos_smearing%use_adaptive)) then
+          call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
+                         num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, spin_decomp, &
+                         pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
+                         pw90_boltzwann%dos_smearing, error, comm)
+          if (allocated(error)) return
+
+          ! This sum multiplied by kweight amounts to calculate
+          ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
+          ! So that the DOS will be in units of 1/eV, normalized so that
+          ! \int_{-\infty}^{\infty} DOS(E) dE = Num.Electrons
+          dos_all = dos_all + dos_k*kweight
+        end if
+      else
+        ! As above, the sum of TDF_k * kweight amounts to calculate
+        ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
+        ! so that we divide by the cell_volume (in Angstrom^3) to have
+        ! the correct integral
+        TDF = TDF + TDF_k*kweight/cell_volume
+
+        if (pw90_boltzwann%calc_also_dos) then
           call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
                          num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, spin_decomp, &
                          pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
@@ -1292,7 +1345,7 @@ contains
   !================================================!
   subroutine TDF_kpt(pw90_boltzwann, ws_region, pw90_spin, wannier_data, ws_distance, &
                      wigner_seitz, HH_R, SS_R, deleig_k, eig_k, EnergyArray, kpt, real_lattice, &
-                     TDF_k, mp_grid, num_wann, num_elec_per_state, spin_decomp, error, comm)
+                     TDF_k, mp_grid, num_wann, num_elec_per_state, spin_decomp, error, comm, levelspacing_k)
     !================================================!
     !! This subroutine calculates the contribution to the TDF of a single k point
     !!
@@ -1364,6 +1417,7 @@ contains
     !!  - spinidx=1 contains the total dos; if if spin_decomp==.true., then
     !!  spinidx=2 and spinidx=3 contain the spin-up and spin-down contributions to the DOS
     real(kind=dp), intent(in) :: real_lattice(3, 3)
+    real(kind=dp), intent(in), optional :: levelspacing_k(:)
 
     complex(kind=dp), allocatable, intent(inout) :: HH_R(:, :, :) !  <0n|r|Rm>
     complex(kind=dp), allocatable, intent(inout) :: SS_R(:, :, :, :) ! <0n|sigma_x,y,z|Rm>
@@ -1377,6 +1431,20 @@ contains
     real(kind=dp) :: binwidth, r_num_elec_per_state
     integer :: BandIdx, loop_f, min_f, max_f
     logical :: DoSmearing
+
+    if (present(levelspacing_k)) then
+      if (.not. pw90_boltzwann%tdf_smearing%use_adaptive) then
+        call set_error_input(error, 'Cannot call TDF_kpt with levelspacing_k and ' &
+                             //'without adptative smearing', comm)
+        return
+      endif
+    else
+      if (pw90_boltzwann%tdf_smearing%use_adaptive) then
+        call set_error_input(error, 'Cannot call TDF_kpt without levelspacing_k and ' &
+                             //'with adptative smearing', comm)
+        return
+      endif
+    end if
 
     r_num_elec_per_state = real(num_elec_per_state, kind=dp)
 
@@ -1406,6 +1474,16 @@ contains
       ! Faster optimization: I precalculate the indices
       ! Value of the smearing in eV; default = 0 eV, i.e. no smearing
       smear = pw90_boltzwann%tdf_smearing%fixed_width
+
+      if (.not. present(levelspacing_k)) then
+        smear = pw90_boltzwann%tdf_smearing%fixed_width
+      else
+        ! Eq.(35) YWVS07
+        smear = min(levelspacing_k(BandIdx)*pw90_boltzwann%tdf_smearing%adaptive_prefactor, &
+                    pw90_boltzwann%tdf_smearing%adaptive_max_width)
+        ! smear=max(smear,min_smearing_binwidth_ratio) !! No: it would render the next if always false
+      end if
+
       if (smear/binwidth < min_smearing_binwidth_ratio) then
         min_f = max(nint((eig_k(BandIdx) - EnergyArray(1))/ &
                          (EnergyArray(size(EnergyArray)) - EnergyArray(1)) &
