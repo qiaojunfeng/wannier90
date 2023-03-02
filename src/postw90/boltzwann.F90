@@ -253,10 +253,6 @@ contains
       MuArray(i) = pw90_boltzwann%mu_min + real(i - 1, dp)*pw90_boltzwann%mu_step
     end do
 
-    if (pw90_boltzwann%tdf_smearing%use_adaptive) then
-      call set_error_input(error, 'Adaptive smearing not allowed in Boltzwann TDF', comm)
-      return
-    endif
     ! I precalculate the TDFEnergyArray
     ! I assume that dis_win_min and dis_win_max are set to sensible values, related to the max and min energy
     ! This is true if the .eig file is present. I can assume its presence since we need it to interpolate the
@@ -1006,6 +1002,11 @@ contains
       write (stdout, '(5X,A)') "*** WARNING! pw90_boltzwann_dos_smr_fixed_en_width ignored since you chose"
       write (stdout, '(5X,A)') "             an adaptive smearing."
     end if
+    if (pw90_boltzwann%tdf_smearing%use_adaptive .and. &
+        (pw90_boltzwann%tdf_smearing%fixed_width .ne. 0._dp) .and. on_root) then
+      write (stdout, '(5X,A)') "*** WARNING! pw90_boltzwann_tdf_smr_fixed_en_width ignored since you chose"
+      write (stdout, '(5X,A)') "             an adaptive smearing."
+    end if
 
     if (on_root .and. (print_output%iprint > 1)) then
       write (stdout, '(5X,A)') "Smearing for TDF: "
@@ -1074,9 +1075,15 @@ contains
         eig(pw90_boltzwann%bandshift_firstband:) = eig(pw90_boltzwann%bandshift_firstband:) + pw90_boltzwann%bandshift_energyshift
       end if
 
-      call TDF_kpt(pw90_boltzwann, ws_region, pw90_spin, wannier_data, ws_distance, wigner_seitz, &
-                   HH_R, SS_R, del_eig, eig, TDFEnergyArray, kpt, real_lattice, TDF_k, mp_grid, &
-                   num_wann, num_elec_per_state, spin_decomp, error, comm)
+      if (pw90_boltzwann%tdf_smearing%use_adaptive) then
+        call TDF_kpt(pw90_boltzwann, ws_region, pw90_spin, wannier_data, ws_distance, wigner_seitz, &
+                     HH_R, SS_R, del_eig, eig, TDFEnergyArray, kpt, real_lattice, TDF_k, mp_grid, &
+                     num_wann, num_elec_per_state, spin_decomp, error, comm, levelspacing_k=levelspacing_k)
+      else
+        call TDF_kpt(pw90_boltzwann, ws_region, pw90_spin, wannier_data, ws_distance, wigner_seitz, &
+                     HH_R, SS_R, del_eig, eig, TDFEnergyArray, kpt, real_lattice, TDF_k, mp_grid, &
+                     num_wann, num_elec_per_state, spin_decomp, error, comm)
+      end if
       if (allocated(error)) return
 
       if ((pw90_boltzwann%tdf_smearing%use_adaptive) .or. &
