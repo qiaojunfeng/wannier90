@@ -877,6 +877,7 @@ contains
 
     real(kind=dp), allocatable :: DOS_EnergyArray(:)
     real(kind=dp), allocatable :: DOS_k(:, :), TDF_k(:, :, :)
+    real(kind=dp), allocatable :: DOS_k_tmp(:, :), TDF_k_tmp(:, :, :)
     real(kind=dp), allocatable :: DOS_all(:, :)
     real(kind=dp) :: kweight
     integer :: ndim, DOS_NumPoints, i, j, k, EnIdx
@@ -937,6 +938,13 @@ contains
       call set_error_alloc(error, 'Error in allocating TDF_k in calcTDF', comm)
       return
     endif
+    if (pw90_boltzwann%tdf_smearing%use_adaptive) then
+      allocate (TDF_k_tmp(6, size(TDFEnergyArray), ndim), stat=ierr)
+      if (ierr /= 0) then
+        call set_error_alloc(error, 'Error in allocating TDF_k_tmp in calcTDF', comm)
+        return
+      endif
+    end if
 
     allocate (HH(num_wann, num_wann), stat=ierr)
     if (ierr /= 0) then
@@ -970,6 +978,13 @@ contains
       call set_error_alloc(error, 'Error in allocating DOS_k in calcTDF', comm)
       return
     endif
+    if (pw90_boltzwann%calc_also_dos .and. pw90_boltzwann%dos_smearing%use_adaptive) then
+      allocate (DOS_k_tmp(size(DOS_EnergyArray), ndim), stat=ierr)
+      if (ierr /= 0) then
+        call set_error_alloc(error, 'Error in allocating DOS_k_tmp in calcTDF', comm)
+        return
+      endif
+    end if
     allocate (DOS_all(size(DOS_EnergyArray), ndim), stat=ierr)
     if (ierr /= 0) then
       call set_error_alloc(error, 'Error in allocating DOS_all in calcTDF', comm)
@@ -1086,6 +1101,21 @@ contains
       end if
       if (allocated(error)) return
 
+      if (pw90_boltzwann%calc_also_dos) then
+        if (pw90_boltzwann%dos_smearing%use_adaptive) then
+          call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
+                         num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, spin_decomp, &
+                         pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
+                         pw90_boltzwann%dos_smearing, error, comm, levelspacing_k=levelspacing_k)
+        else
+          call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
+                         num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, spin_decomp, &
+                         pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
+                         pw90_boltzwann%dos_smearing, error, comm)
+        end if
+        if (allocated(error)) return
+      end if
+
       if ((pw90_boltzwann%tdf_smearing%use_adaptive) .or. &
           ((pw90_boltzwann%calc_also_dos) .and. (pw90_boltzwann%dos_smearing%use_adaptive))) then
 
@@ -1095,6 +1125,15 @@ contains
         min_spacing = min(min_spacing, minval(abs(levelspacing_k)))
         max_spacing = max(max_spacing, maxval(abs(levelspacing_k)))
         if (any(abs(levelspacing_k) < SPACING_THRESHOLD)) then
+
+          if (pw90_boltzwann%tdf_smearing%use_adaptive) then
+            TDF_k = 0.0_dp
+          end if
+
+          if ((pw90_boltzwann%calc_also_dos) .and. (pw90_boltzwann%dos_smearing%use_adaptive)) then
+            DOS_k = 0.0_dp
+          end if
+
           orig_kpt = kpt
           NumPtsRefined = NumPtsRefined + 1
           do i = -1, 1, 2
@@ -1118,20 +1157,16 @@ contains
 
                 if (pw90_boltzwann%tdf_smearing%use_adaptive) then
                   call TDF_kpt(pw90_boltzwann, ws_region, pw90_spin, wannier_data, ws_distance, wigner_seitz, &
-                               HH_R, SS_R, del_eig, eig, TDFEnergyArray, kpt, real_lattice, TDF_k, mp_grid, &
+                               HH_R, SS_R, del_eig, eig, TDFEnergyArray, kpt, real_lattice, TDF_k_tmp, mp_grid, &
                                num_wann, num_elec_per_state, spin_decomp, error, comm, levelspacing_k=levelspacing_k)
                   if (allocated(error)) return
 
-                  ! As above, the sum of TDF_k * kweight amounts to calculate
-                  ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
-                  ! so that we divide by the cell_volume (in Angstrom^3) to have
-                  ! the correct integral
                   ! I divide by 8 because I'm substituting a point with its 8 neighbors
-                  TDF = TDF + TDF_k*kweight/cell_volume/8.
+                  TDF_k = TDF_k + TDF_k_tmp/8.0_dp
                 end if
 
-                if ((pw90_boltzwann%calc_also_dos) .and. (pw90_boltzwann%dos_smearing%use_adaptive)) then
-                  call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
+                if (pw90_boltzwann%calc_also_dos .and. pw90_boltzwann%dos_smearing%use_adaptive) then
+                  call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k_tmp, &
                                  num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, &
                                  spin_decomp, pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
                                  pw90_boltzwann%dos_smearing, error, comm, &
@@ -1139,74 +1174,28 @@ contains
                   if (allocated(error)) return
 
                   ! I divide by 8 because I'm substituting a point with its 8 neighbors
-                  dos_all = dos_all + dos_k*kweight/8.
+                  DOS_k = DOS_k + DOS_k_tmp/8.0_dp
                 end if
 
               end do
             end do
           end do
-        else
 
-          if (pw90_boltzwann%tdf_smearing%use_adaptive) then
-            ! As above, the sum of TDF_k * kweight amounts to calculate
-            ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
-            ! so that we divide by the cell_volume (in Angstrom^3) to have
-            ! the correct integral
-            TDF = TDF + TDF_k*kweight/cell_volume
-          end if
-
-          if ((pw90_boltzwann%calc_also_dos) .and. (pw90_boltzwann%dos_smearing%use_adaptive)) then
-            call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
-                           num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, spin_decomp, &
-                           pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
-                           pw90_boltzwann%dos_smearing, error, comm, levelspacing_k=levelspacing_k)
-            if (allocated(error)) return
-
-            dos_all = dos_all + dos_k*kweight
-          end if
         end if
+      end if
 
-        if (.not. pw90_boltzwann%tdf_smearing%use_adaptive) then
-          ! As above, the sum of TDF_k * kweight amounts to calculate
-          ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
-          ! so that we divide by the cell_volume (in Angstrom^3) to have
-          ! the correct integral
-          TDF = TDF + TDF_k*kweight/cell_volume
-        end if
+      ! As above, the sum of TDF_k * kweight amounts to calculate
+      ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
+      ! so that we divide by the cell_volume (in Angstrom^3) to have
+      ! the correct integral
+      TDF = TDF + TDF_k*kweight/cell_volume
 
-        if (pw90_boltzwann%calc_also_dos .and. (.not. pw90_boltzwann%dos_smearing%use_adaptive)) then
-          call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
-                         num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, spin_decomp, &
-                         pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
-                         pw90_boltzwann%dos_smearing, error, comm)
-          if (allocated(error)) return
-
-          ! This sum multiplied by kweight amounts to calculate
-          ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
-          ! So that the DOS will be in units of 1/eV, normalized so that
-          ! \int_{-\infty}^{\infty} DOS(E) dE = Num.Electrons
-          dos_all = dos_all + dos_k*kweight
-        end if
-      else
-        ! As above, the sum of TDF_k * kweight amounts to calculate
+      if (pw90_boltzwann%calc_also_dos) then
+        ! This sum multiplied by kweight amounts to calculate
         ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
-        ! so that we divide by the cell_volume (in Angstrom^3) to have
-        ! the correct integral
-        TDF = TDF + TDF_k*kweight/cell_volume
-
-        if (pw90_boltzwann%calc_also_dos) then
-          call dos_get_k(num_elec_per_state, ws_region, kpt, DOS_EnergyArray, eig, dos_k, &
-                         num_wann, wannier_data, real_lattice, mp_grid, pw90_dos, spin_decomp, &
-                         pw90_spin, ws_distance, wigner_seitz, HH_R, SS_R, &
-                         pw90_boltzwann%dos_smearing, error, comm)
-          if (allocated(error)) return
-
-          ! This sum multiplied by kweight amounts to calculate
-          ! spin_degeneracy * V_cell/(2*pi)^3 * \int_BZ d^3k
-          ! So that the DOS will be in units of 1/eV, normalized so that
-          ! \int_{-\infty}^{\infty} DOS(E) dE = Num.Electrons
-          dos_all = dos_all + dos_k*kweight
-        end if
+        ! So that the DOS will be in units of 1/eV, normalized so that
+        ! \int_{-\infty}^{\infty} DOS(E) dE = Num.Electrons
+        dos_all = dos_all + dos_k*kweight
       end if
 
     end do
@@ -1304,6 +1293,13 @@ contains
       call set_error_dealloc(error, 'Error in deallocating DOS_k in calcTDF', comm)
       return
     endif
+    if (pw90_boltzwann%calc_also_dos .and. pw90_boltzwann%dos_smearing%use_adaptive) then
+      deallocate (DOS_k_tmp, stat=ierr)
+      if (ierr /= 0) then
+        call set_error_dealloc(error, 'Error in deallocating DOS_k_tmp in calcTDF', comm)
+        return
+      endif
+    end if
     deallocate (DOS_all, stat=ierr)
     if (ierr /= 0) then
       call set_error_dealloc(error, 'Error in deallocating DOS_all in calcTDF', comm)
@@ -1314,6 +1310,13 @@ contains
       call set_error_dealloc(error, 'Error in deallocating TDF_k in calcTDF', comm)
       return
     endif
+    if (pw90_boltzwann%tdf_smearing%use_adaptive) then
+      deallocate (TDF_k_tmp, stat=ierr)
+      if (ierr /= 0) then
+        call set_error_dealloc(error, 'Error in deallocating TDF_k_tmp in calcTDF', comm)
+        return
+      end if
+    end if
 
   end subroutine calcTDFandDOS
 
@@ -1356,9 +1359,9 @@ contains
     !================================================!
     !! This subroutine calculates the contribution to the TDF of a single k point
     !!
-    !!  This routine does not use the adaptive smearing; in fact, for non-zero temperatures
-    !!       one often doesn't even need to smear. It simply uses a standard smearing as defined by
-    !!       the variables pw90_boltzwann_TDF_smr_fixed_en_width and pw90_boltzwann_TDF_smr_index
+    !! For non-zero temperatures, one often doesn't even need to smear. It simply
+    !!       uses a standard smearing as defined by the variables
+    !!       pw90_boltzwann_TDF_smr_fixed_en_width and pw90_boltzwann_TDF_smr_index
     !!
     !! still to do: adapt spin_get_nk to read in input the UU rotation matrix
     !!
@@ -1475,13 +1478,9 @@ contains
         beta_sq = 1.0_dp - alpha_sq ! |beta|^2 = 1 - |alpha|^2
       end if
 
-      ! Do not use an adaptive smearing here, it would require the knowledge of second derivatives
       ! And typically, when working at not too small temperatures, smearing is not needed
 
-      ! Faster optimization: I precalculate the indices
       ! Value of the smearing in eV; default = 0 eV, i.e. no smearing
-      smear = pw90_boltzwann%tdf_smearing%fixed_width
-
       if (.not. present(levelspacing_k)) then
         smear = pw90_boltzwann%tdf_smearing%fixed_width
       else
@@ -1491,6 +1490,7 @@ contains
         ! smear=max(smear,min_smearing_binwidth_ratio) !! No: it would render the next if always false
       end if
 
+      ! Faster optimization: I precalculate the indices
       if (smear/binwidth < min_smearing_binwidth_ratio) then
         min_f = max(nint((eig_k(BandIdx) - EnergyArray(1))/ &
                          (EnergyArray(size(EnergyArray)) - EnergyArray(1)) &
