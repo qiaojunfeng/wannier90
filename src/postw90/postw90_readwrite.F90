@@ -1454,8 +1454,6 @@ contains
       return
     endif
 
-    ! For TDF: TDF smeared in a NON-adaptive way; value in eV, default = 0._dp
-    ! (i.e., no smearing)
     pw90_boltzwann%tdf_smearing%fixed_width = pw90_smearing%fixed_width
     call w90_readwrite_get_keyword('boltz_tdf_smr_fixed_en_width', found, error, comm, &
                                    r_value=pw90_boltzwann%tdf_smearing%fixed_width)

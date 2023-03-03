@@ -771,6 +771,8 @@ contains
     if (allocated(error)) return
     call comms_bcast(pw90_boltzwann%dos_smearing%adaptive_max_width, 1, error, comm)
     if (allocated(error)) return
+    call comms_bcast(pw90_boltzwann%dos_smearing%type_index, 1, error, comm)
+    if (allocated(error)) return
     call comms_bcast(pw90_boltzwann%mu_min, 1, error, comm)
     if (allocated(error)) return
     call comms_bcast(pw90_boltzwann%mu_max, 1, error, comm)
@@ -801,7 +803,9 @@ contains
     if (allocated(error)) return
     call comms_bcast(pw90_boltzwann%tdf_smearing%type_index, 1, error, comm)
     if (allocated(error)) return
-    call comms_bcast(pw90_boltzwann%dos_smearing%type_index, 1, error, comm)
+    call comms_bcast(pw90_boltzwann%tdf_smearing%adaptive_prefactor, 1, error, comm)
+    if (allocated(error)) return
+    call comms_bcast(pw90_boltzwann%tdf_smearing%adaptive_max_width, 1, error, comm)
     if (allocated(error)) return
     call comms_bcast(pw90_boltzwann%bandshift, 1, error, comm)
     if (allocated(error)) return
