@@ -47,17 +47,19 @@ The current density $\mathrm{\bm{J}}$ and the heat current (or energy
 flux density) $\mathrm{\bm{J}}_Q$ can be written, respectively, as
 
 $$
+\begin{equation}
 \begin{aligned}
   \mathrm{\bm{J}}   &= \mathrm{\bm{\sigma}}(\mathrm{\bm{E}} - \mathrm{\bm{S}} \mathrm{\bm{\nabla }}T) \\
   \mathrm{\bm{J}}_Q &= T \mathrm{\bm{\sigma }}\mathrm{\bm{S}} \mathrm{\bm{E}} - \mathrm{\bm{K}} \mathrm{\bm{\nabla }}T,
 \end{aligned}
+\end{equation}
 $$ 
 
 where the electrical conductivity
 $\mathrm{\bm{\sigma}}$, the Seebeck coefficient $\mathrm{\bm{S}}$ and
 $\mathrm{\bm{K}}$ are $3\times 3$ tensors, in general.
 
-!!!Note
+!!! note
     the thermal conductivity $\mathrm{\bm{\kappa}}$ (actually, the
     electronic part of the thermal conductivity), which is defined as the
     heat current per unit of temperature gradient in open-circuit
@@ -89,7 +91,9 @@ $\mathrm{\bm{S}}$, $f(\varepsilon,\mu,T)$ is the usual Fermi--Dirac
 distribution function
 
 $$
+\begin{equation}
 f(\varepsilon,\mu,T) = \frac{1}{e^{(\varepsilon-\mu)/K_B T}+1}
+\end{equation}
 $$ 
 
 and
@@ -97,7 +101,9 @@ $\Sigma_{ij}(\varepsilon)$ is the Transport Distribution Function (TDF)
 tensor, defined as
 
 $$
+\begin{equation}
 \Sigma_{ij}(\varepsilon) = \frac 1 V \sum_{n,\mathrm{\bm{k}}} v_i(n,\mathrm{\bm{k}}) v_j(n,\mathrm{\bm{k}}) \tau(n,\mathrm{\bm{k}}) \delta(\varepsilon - E_{n,k}).
+\end{equation}
 $$
 
 In the above formula, the sum is over all bands $n$ and all states

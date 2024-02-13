@@ -30,7 +30,7 @@ Otherwise, it must contain `cart` (or `abs`) if instead the $k-$point
 coordinates are given in absolute coordinates (in units of 1/Å) along
 the $k_x$, $k_y$ and $k_z$ axes.
 
-!!!Note
+!!! note
     *Note on units*: In the case of absolute coordinates, if $a_{lat}$ is
     the lattice constant expressed in angstrom, and you want to represent
     for instance the point $X=\frac {2\pi}{a_{lat}} [0.5, 0, 0]$, then you
@@ -68,7 +68,7 @@ large number of $k$ points (if the flag `geninterp_single_file` is
 `true`, instead, all the I/O is made by the root node, which is a
 significant bottleneck).
 
-!!!Note
+!!! note
     **Important!** The files are not deleted before the start of a
     calculation, but only the relevant files are overwritten. Therefore, if
     one first performs a calculation and then a second one with a smaller

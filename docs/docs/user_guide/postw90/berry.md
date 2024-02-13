@@ -14,17 +14,21 @@ states $\vert u_{n{\bf k}}\rangle=e^{-i{\bf k}\cdot{\bf r}}\vert
 \psi_{n{\bf k}}\rangle$ as
 
 $$
+\begin{equation}
 {\bf A}_n({\bf k})=\langle u_{n{\bf k}}\vert i\bm{\nabla}_{\bf k}\vert
 u_{n{\bf k}}\rangle,
+\end{equation}
 $$ 
 
 and the Berry curvature is the curl of the connection,
 
 $$
+\begin{equation}
 \bm{\Omega}_n({\bf k})=\bm{\nabla}_{\bf k}\times {\bf A}_n({\bf k})=
 -{\rm Im}
 \langle \bm{\nabla}_{\bf k} u_{n{\bf k}}\vert \times
 \vert\bm{\nabla}_{\bf k} u_{n{\bf k}}\rangle.
+\end{equation}
 $$ 
 
 These two quantities
@@ -57,13 +61,17 @@ $$
 The Kubo-Greenwood formula for the optical conductivity of a crystal in
 the independent-particle approximation reads
 
-$$\sigma_{\alpha\beta}(\hbar\omega)=\frac{ie^2\hbar}{N_k\Omega_c}
+$$
+\begin{equation}
+\sigma_{\alpha\beta}(\hbar\omega)=\frac{ie^2\hbar}{N_k\Omega_c}
 \sum_{\bf k}\sum_{n,m}
 \frac{f_{m{\bf k}}-f_{n{\bf k}}}
      {\varepsilon_{m{\bf k}}-\varepsilon_{n{\bf k}}}
 \frac{\langle\psi_{n{\bf k}}\vert v_\alpha\vert\psi_{m{\bf k}}\rangle
       \langle\psi_{m{\bf k}}\vert v_\beta\vert\psi_{n{\bf k}}\rangle}
-{\varepsilon_{m{\bf k}}-\varepsilon_{n{\bf k}}-(\hbar\omega+i\eta)}.$$
+{\varepsilon_{m{\bf k}}-\varepsilon_{n{\bf k}}-(\hbar\omega+i\eta)}.
+\end{equation}
+$$
 
 Indices $\alpha,\beta$ denote Cartesian directions, $\Omega_c$ is the
 cell volume, $N_k$ is the number of $k$-points used for sampling the
@@ -117,12 +125,14 @@ denotes a "broadended" delta-function. Using this identity we find for
 the Hermitean part
 
 $$
+\begin{equation}
 \label{eq:sig-H}
 \sigma_{{\bf k},\alpha\beta}^{\rm H}(\hbar\omega)=-\frac{\pi e^2}{\hbar\Omega_c}
 \sum_{n,m}(f_{m{\bf k}}-f_{n{\bf k}})
 (\varepsilon_{m{\bf k}}-\varepsilon_{n{\bf k}})
 A_{nm,\alpha}({\bf k})A_{mn,\beta}({\bf k})
 \overline{\delta}(\varepsilon_{m{\bf k}}-\varepsilon_{n{\bf k}}-\hbar\omega).
+\end{equation}
 $$
 
 Improved numerical accuracy can be achieved by replacing the Lorentzian
@@ -165,8 +175,10 @@ $\eta\rightarrow \eta_{nm\bf k}$. This is done as follows (see
 description of the keyword `adpt_smr_fac`)
 
 $$
+\begin{equation}
 \eta_{nm{\bf k}}=\alpha\vert \bm{\nabla}_{\bf k}
 (\varepsilon_{m{\bf k}}-\varepsilon_{n{\bf k}})\vert \Delta k.
+\end{equation}
 $$
 
 The energy eigenvalues $\varepsilon_{n\bf k}$, band velocities
@@ -178,12 +190,14 @@ Brillouin zone, the Hermitean and anti-Hermitean parts of the
 conductivity are assembled into the symmetric and antisymmetric tensors
 
 $$
+\begin{equation}
 \begin{aligned}
 \sigma^{\rm S}_{\alpha\beta}&=
 {\rm Re}\sigma^{\rm H}_{\alpha\beta}+i{\rm Im}\sigma^{\rm AH}_{\alpha\beta}\\
 \sigma^{\rm A}_{\alpha\beta}&=
 {\rm Re}\sigma^{\rm AH}_{\alpha\beta}+i{\rm Im}\sigma^{\rm H}_{\alpha\beta},
 \end{aligned}
+\end{equation}
 $$
 
 whose independent components are written as a function
@@ -205,10 +219,12 @@ Eq. $\eqref{eq:sig-AH}$. The contribution from point ${\bf k}$ in the
 Brillouin zone is
 
 $$
+\begin{equation}
 \sigma^{\rm AH}_{{\bf k},\alpha\beta}(0)=\frac{2e^2}{\hbar\Omega_c}
 \sum_{n,m}f_{n\bf k}(1-f_{m\bf k})
 {\rm Im}\langle \nabla_{k_\alpha} u_{n\bf k}\vert u_{m\bf k}\rangle
 \langle u_{m\bf k}\vert\nabla_{k_\beta} u_{n\bf k}\rangle,
+\end{equation}
 $$
  
 where we
@@ -311,8 +327,10 @@ noteworthy difference is the way in which two *ab-initio* matrix
 elements are evaluated,
 
 $$
+\begin{equation}
 \langle u_{n{\bf k}}\vert\sigma_\gamma H_{\bf k}\vert u_{m{\bf k}+{\bf b}}\rangle, 
 \langle u_{n{\bf k}}\vert\sigma_\gamma \vert u_{m{\bf k}+{\bf b}}\rangle, \gamma = x, y, z
+\end{equation}
 $$
 
 These are evaluated by `pw2wannier90` using Ryoo's method. In contrast,
@@ -489,6 +507,7 @@ power. According to Appendix B of Ref [@winkler_spin-orbit_2003], the
 first three terms are 
 
 $$
+\begin{equation}
 \begin{aligned}
 \label{eq:pert-matelem0}
 & \tilde{H}^{0}_{mm'} = H^{0}_{mm'},\\
@@ -500,6 +519,7 @@ $$
 \dfrac{1}{E_{m}-E_{l}}+\dfrac{1}{E_{m'}-E_{l}}
 \right),
 \end{aligned}
+\end{equation}
 $$ 
 
 where $m,m'\in A$ and $l\in B$. The approximation
@@ -526,10 +546,12 @@ $$
 where $a,b=x,y,z$, and 
 
 $$
+\begin{equation}
 \begin{aligned}
 &H_{a}^{(W)}(0)=\left. \dfrac{\partial H^{(W)}(\bm{k})}{\partial k_{a}}\right\rvert_{\bm{k}=0}\\
 &H_{ab}^{(W)}(0)=\left. \dfrac{\partial^{2} H^{(W)}(\bm{k})}{\partial k_{a}\partial k_{b}}\right\rvert_{\bm{k}=0}
 \end{aligned}
+\end{equation}
 $$
 
 We now apply to $H^{(W)}(\bm{k})$ a similarity transformation $U(0)$
@@ -547,7 +569,9 @@ $$
 where we introduced the notation
 
 $$
+\begin{equation}
 \overline{\mathcal{O}}=U^{\dagger}(0)\mathcal{O}^{(W)}(0)U(0),
+\end{equation}
 $$ 
 
 and
@@ -614,7 +638,11 @@ with `wannier90`. In particular, $\langle {\bf
   0}n\vert {\bf r}\vert {\bf R}m\rangle$ can be calculated by Fourier
 transforming the overlap matrices in Eq. (1.7),
 
-$$\langle u_{n{\bf k}}\vert u_{m{\bf k}+{\bf b}}\rangle.$$
+$$
+\begin{equation}
+\langle u_{n{\bf k}}\vert u_{m{\bf k}+{\bf b}}\rangle.
+\end{equation}
+$$
 
 Further
 Wannier matrix elements are needed for the orbital
@@ -622,8 +650,12 @@ magnetization [@lopez-prb12]. In order to calculate them using Fourier
 transforms, one more piece of information must be taken from the
 $k$-space *ab-initio* calculation, namely, the matrices
 
-$$\langle u_{n{\bf k}+{\bf b}_1}\vert
-H_{\bf k}\vert u_{m{\bf k}+{\bf b}_2}\rangle$$ 
+$$
+\begin{equation}
+\langle u_{n{\bf k}+{\bf b}_1}\vert
+H_{\bf k}\vert u_{m{\bf k}+{\bf b}_2}\rangle
+\end{equation}
+$$ 
 
 over the *ab-initio*
 $k$-point mesh [@lopez-prb12]. These are evaluated by `pw2wannier90`,
@@ -635,8 +667,12 @@ input file ` seedname.pw2wan` the line
 The calculation of spin Hall conductivity needs the spin matrix
 elements
 
-$$\langle u_{n{\bf k}}\vert \sigma_\gamma \vert u_{m{\bf k}}\rangle, 
-\gamma = x, y, z$$ 
+$$
+\begin{equation}
+\langle u_{n{\bf k}}\vert \sigma_\gamma \vert u_{m{\bf k}}\rangle, 
+\gamma = x, y, z
+\end{equation}
+$$ 
 
 from the *ab-initio* $k$-point mesh. These are also
 evaluated by `pw2wannier90` by adding to the input file
@@ -648,10 +684,12 @@ If one uses Ryoo's method to calculate spin Hall conductivity, the
 further matrix elements are needed: 
 
 $$
+\begin{equation}
 \langle u_{n{\bf k}}\vert
 \sigma_\gamma H_{\bf k}\vert u_{m{\bf k}+{\bf b}}\rangle, \langle u_{n{\bf k}}\vert
 \sigma_\gamma \vert u_{m{\bf k}+{\bf b}}\rangle,
 \gamma = x, y, z
+\end{equation}
 $$ 
 
 and these are evaluated by adding to the input file

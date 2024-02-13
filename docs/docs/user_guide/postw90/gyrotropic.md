@@ -142,7 +142,7 @@ $$
 The summations over $n$ and $l$ span the occupied ($o$)
 and empty ($e$) bands respectively, $\omega_{ln}=(E_l-E_n)/\hbar$, and
 ${\bm A}_{ln}({\bm k})$ is given by
-[Berry Eq. (1)](../berry/#mjx-eqn:eq:berry-connection-matrix)
+[Berry Eq. (3)](../berry/#mjx-eqn:eq:berry-connection-matrix)
 <!-- Eq. $\eqref{eq:berry-connection-matrix}$.  -->
 Finally, the matrix
 $B_{nl}^{ac}$ has both orbital and spin contributions given by
@@ -171,8 +171,11 @@ contribute less than 0.5% of the total $\rho_0^{\rm inter}$ of Te.
 Expanding $H=\sum_m \vert u_m\rangle E_m \langle u_m\vert$ we obtain for
 the orbital matrix elements
 
-$$B_{nl}^{ac\,({\rm orb})}=-i\partial_a(E_n+E_l)A_{nl}^c \sum_m \Bigl\{ (E_n-E_m) A_{nm}^aA_{ml}^c -(E_l-E_m) A_{nm}^cA_{ml}^a \Bigr\}.
+$$
+\begin{equation}
 \label{eq:Bnl-sum}
+B_{nl}^{ac\,({\rm orb})}=-i\partial_a(E_n+E_l)A_{nl}^c \sum_m \Bigl\{ (E_n-E_m) A_{nm}^aA_{ml}^c -(E_l-E_m) A_{nm}^cA_{ml}^a \Bigr\}.
+\end{equation}
 $$ 
 
 This reduces the calculation of $B^{\text{(orb)}}$
