@@ -116,10 +116,10 @@ translate_home_cell only relevant if write_xyz is `.true.`
 |        dis_win_max         |  P   | Top of the outer energy window                                         |
 |        dis_froz_min        |  P   | Bottom of the inner (frozen) energy window                             |
 |        dis_froz_max        |  P   | Top of the inner (frozen) energy window                                |
-|        dis_num_iter        |  I   | Number of iterations for the minimisation of $\omi$                    |
-|       dis_mix_ratio        |  R   | Mixing ratio during the minimisation of $\omi$                         |
-|        dis_conv_tol        |  R   | The convergence tolerance for finding $\omi$                           |
-|      dis_conv_window       |  I   | The number of iterations over which convergence of $\omi$ is assessed. |
+|        dis_num_iter        |  I   | Number of iterations for the minimisation of $\Omega_{\mathrm{I}}$                    |
+|       dis_mix_ratio        |  R   | Mixing ratio during the minimisation of $\Omega_{\mathrm{I}}$                         |
+|        dis_conv_tol        |  R   | The convergence tolerance for finding $\Omega_{\mathrm{I}}$                           |
+|      dis_conv_window       |  I   | The number of iterations over which convergence of $\Omega_{\mathrm{I}}$ is assessed. |
 |      dis_spheres_num       |  I   | Number of spheres in k-space where disentaglement is performed         |
 |   dis_spheres_first_wann   |  I   | Index of the first band to be considered a Wannier function            |
 |        dis_spheres         |  R   | List of centres and radii, for disentanglement only in spheres         |
