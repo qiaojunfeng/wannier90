@@ -105,7 +105,7 @@ along $k_x$ (from S to X) using python and the file `kdotp_plot.py`
 provided in the example folder
 
 ```bash title="Terminal"
-    python kdotp_plot.py
+python kdotp_plot.py
 ```
 
 For comparison, the exact band structure calculated usingWannier90 (file `bc2n_band.dat`, generated automatically) is also plotted along (see the band dispersion [plot](#fig:bc2n-bnd)).

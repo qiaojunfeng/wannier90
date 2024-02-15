@@ -4,7 +4,7 @@
     curvature-like term of fcc Pt considering spin-orbit coupling. To
     gain a better understanding of this tutorial, it is suggested to read
     Ref. [@qiao-prb2018] for a detailed description of the theory and
-    Ch. 12.5 of the User Guide.*
+    the [berry_task=shc: spin Hall conductivity](../../user_guide/postw90/berry#sec:shc) chapter of the User Guide.*
 
 -   Directory: `tutorials/tutorial29/` *Files can be downloaded [here](https://github.com/wannier-developers/wannier90/tutorials/tutorial29)*
 
