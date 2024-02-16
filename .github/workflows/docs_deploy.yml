@@ -13,10 +13,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - run: cd docs/
+
       - name: Deploy docs
         uses: mhausenblas/mkdocs-deploy-gh-pages@1.26
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ENABLE_MKDOCS_GIT_COMMITTERS: True
-          CONFIG_FILE: docs/mkdocs.yml
-          REQUIREMENTS: docs/requirements.txt
