@@ -59,4 +59,12 @@ if (WANNIER90_INSTALL)
 			EXPORT Wannier90Targets
 			RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Wannier90_Runtime
 			)
+    install(TARGETS w90chk2chk.x
+			EXPORT Wannier90Targets
+			RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Wannier90_Runtime
+			)
+    install(TARGETS w90spn2spn.x
+			EXPORT Wannier90Targets
+			RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Wannier90_Runtime
+			)
 endif ()

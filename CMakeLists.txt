@@ -119,9 +119,6 @@ set_target_properties(Wannier90_lib PROPERTIES
 		SOVERSION ${PROJECT_VERSION_MAJOR})
 add_library(Wannier90::wannier90 ALIAS Wannier90_lib)
 
-## Main implementations
-add_subdirectory(src)
-
 ## Testing
 if (WANNIER90_TEST)
 	enable_testing()
@@ -129,6 +126,9 @@ if (WANNIER90_TEST)
 	add_executable(w90spn2spn.x)
 	add_subdirectory(test-suite)
 endif ()
+
+## Main implementations
+add_subdirectory(src)
 
 #[==============================================================================================[
 #                                       Install or Export                                       #
