@@ -68,7 +68,7 @@ jobs:
             test-suite/tests/test*/test.out*
 
   docs:
-    name: Build docs
+    name: Validate mkdocs links
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,7 +77,7 @@ jobs:
           python-version: "3.11"
           cache: "pip"
       - run: pip install -r docs/requirements.txt
-      - run: mkdocs build -s
+      - run: mkdocs build --strict
         working-directory: ./docs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
