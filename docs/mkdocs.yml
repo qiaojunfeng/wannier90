@@ -211,9 +211,29 @@ plugins:
       bib_dir: .
       # default "{number}", to avoid conflict with user-defined footnotes
       footnote_format: "ref{number}"
+  - exporter
+  - exporter-pdf:
+      # skip generating PDFs if the MKDOCS_EXPORTER_ENABLED environment variable
+      # is not true, to speed up development
+      enabled: !ENV [MKDOCS_EXPORTER_ENABLED, true]
+      concurrency: 8
+      # covers:
+      #   front: resources/templates/covers/front.html.j2
+      #   back: resources/templates/covers/back.html.j2
+      # stylesheets:
+      #   - resources/stylesheets/pdf.scss
+  - exporter-extras:
+      buttons:
+        - title: Download as PDF
+          enabled: !!python/name:mkdocs_exporter.plugins.pdf.button.enabled
+          icon: !!python/name:mkdocs_exporter.plugins.pdf.button.icon
+          attributes:
+            href: !!python/name:mkdocs_exporter.plugins.pdf.button.href
+            download: !!python/name:mkdocs_exporter.plugins.pdf.button.download
 
 extra_javascript:
   - javascripts/mathjax.js
+  - javascripts/mkdocs-exporter.js
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
   # - javascripts/katex.js
