@@ -37,6 +37,7 @@ target_sources(Wannier90_lib PRIVATE
 		library_extra.F90
 		library_interface.F90
 		overlap.F90
+		parallel_transport.F90
 		plot.F90
 		readwrite.F90
 		sitesym.F90

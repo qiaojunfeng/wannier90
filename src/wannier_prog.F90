@@ -105,7 +105,7 @@ program wannier
   integer, pointer :: nb, nk, nw, nn
   integer :: stdout, stderr
   logical, pointer :: pp
-  logical :: ld, lovlp, ldsnt, lwann, lplot, ltran, need_eigvals
+  logical :: ld, lovlp, ldsnt, lwann, lplot, ltran, need_eigvals, lptg
   type(lib_common_type), target :: common_data
   type(w90_error_type), allocatable :: error
   character(len=9) :: cdate, ctime
@@ -249,6 +249,7 @@ program wannier
   lwann = .true.
   lplot = .true.
   ltran = .false.
+  lptg = .false.
 
   if (restart == '') then
     if (rank == 0) write (stdout, '(1x,a/)') 'Starting a new Wannier90 calculation ...'
@@ -278,11 +279,20 @@ program wannier
       lwann = .false.
       lplot = .false.
       ltran = .true.
+    elseif (restart == 'parallel_transport') then
+      if (rank == 0) write (stdout, '(1x,a/)') 'Restarting Wannier90 from parallel transport ...'
+      lovlp = .false.
+      ldsnt = .false.
+      lwann = .false.
+      lplot = .false.
+      ltran = .false.
+      lptg = .true.
       !else
       ! illegitimate restart choice, should declaim the acceptable choices
     end if
   end if
   ltran = (ltran .or. common_data%w90_calculation%transport)
+  lptg = (lptg .or. common_data%w90_calculation%parallel_transport)
   ldsnt = (ldsnt .and. (nw < nb)) ! disentanglement only needed if space reduced
 
   ! circumstances where eigenvalues are needed are a little overcomplicated
@@ -324,6 +334,13 @@ program wannier
     call w90_wannierise(common_data, stdout, stderr, ierr)
     if (ierr /= 0) stop
     call write_chkpt(common_data, 'postwann', stdout, stderr, ierr)
+    if (ierr /= 0) stop
+  end if
+
+  if (lptg) then
+    call run_parallel_transport(common_data, stdout, stderr, ierr)
+    if (ierr /= 0) stop
+    call write_chkpt(common_data, 'postpt', stdout, stderr, ierr)
     if (ierr /= 0) stop
   end if
 

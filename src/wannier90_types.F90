@@ -54,6 +54,10 @@ module w90_wannier90_types
     logical :: wannier_plot = .false. !plot, wannier_lib
     logical :: fermi_surface_plot = .false. ! plot, wannier_lib!
     logical :: transport = .false. ! also hamiltonian, wannier_prog, wannier_lib
+    logical :: parallel_transport = .false. ! smooth the gauge by parallel transport
+    logical :: parallel_transport_use_gauge = .false. ! seed transport from current u_matrix
+    logical :: parallel_transport_log_interp = .false. ! logarithmic-interpolation variant
+    logical :: mrwf = .false. ! manifold-remixed Wannier functions (split + parallel transport)
   end type w90_calculation_type
 
   type output_file_type
@@ -252,6 +256,23 @@ module w90_wannier90_types
     integer :: num_cell_rr = 0
     real(kind=dp) :: group_threshold = 0.15_dp
   end type transport_type
+
+  type mrwf_type ! mrwf.F90
+    !!==================================================
+    !! Controls manifold-remixed Wannier functions: split a valence+conduction
+    !! Wannierisation into isolated manifolds and parallel-transport each.
+    !!==================================================
+    integer :: num_val = 0
+    !! simple two-way split at this band count (valence/conduction); 0 => unused
+    integer :: num_manifolds = 0
+    !! number of isolated manifolds described in the mrwf_manifolds block
+    integer, allocatable :: manifolds(:, :)
+    !! (2, num_manifolds): first and last band index of each manifold
+    logical :: run_maxloc = .false.
+    !! run a full wannierisation on each manifold after parallel transport
+    logical :: write_unk = .false.
+    !! split UNK files per manifold for Wannier-function plotting
+  end type mrwf_type
 
   ! projections selection - overlap.F90
   ! REVIEW_2021-08-09: At first sight it might appear that select_projections should go in

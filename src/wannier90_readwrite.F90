@@ -423,6 +423,22 @@ contains
                                    l_value=w90_calculation%fermi_surface_plot)
     if (allocated(error)) return
 
+    call w90_readwrite_get_keyword(settings, 'parallel_transport', found, error, comm, &
+                                   l_value=w90_calculation%parallel_transport)
+    if (allocated(error)) return
+
+    call w90_readwrite_get_keyword(settings, 'parallel_transport_use_gauge', found, error, comm, &
+                                   l_value=w90_calculation%parallel_transport_use_gauge)
+    if (allocated(error)) return
+
+    call w90_readwrite_get_keyword(settings, 'parallel_transport_log_interp', found, error, comm, &
+                                   l_value=w90_calculation%parallel_transport_log_interp)
+    if (allocated(error)) return
+
+    call w90_readwrite_get_keyword(settings, 'mrwf', found, error, comm, &
+                                   l_value=w90_calculation%mrwf)
+    if (allocated(error)) return
+
   end subroutine w90_wannier90_readwrite_read_w90_calcs
 
   !================================================!
@@ -925,7 +941,8 @@ contains
     if (allocated(error)) return
     if (found) then
       if ((w90_calculation%restart .ne. 'default') .and. (w90_calculation%restart .ne. 'wannierise') &
-          .and. (w90_calculation%restart .ne. 'plot') .and. (w90_calculation%restart .ne. 'transport')) then
+          .and. (w90_calculation%restart .ne. 'plot') .and. (w90_calculation%restart .ne. 'transport') &
+          .and. (w90_calculation%restart .ne. 'parallel_transport')) then
         call set_error_input(error, 'Error in input file: value of restart not recognised', comm)
         return
       else

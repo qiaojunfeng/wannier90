@@ -73,6 +73,7 @@ module w90_library_extra
   public :: print_times
   public :: read_chkpt
   public :: read_eigvals
+  public :: run_parallel_transport
   public :: set_kpoint_distribution
   public :: write_chkpt
   public :: write_kmesh
@@ -513,4 +514,133 @@ contains
     end if
     common_data%dist_kpoints = dist
   end subroutine set_kpoint_distribution
+  !================================================================!
+  subroutine run_parallel_transport(common_data, istdout, istderr, ierr)
+    !! Driver for the parallel-transport gauge smoothing. Gathers the full
+    !! Wannier-gauge overlaps, reconstructs the raw overlaps, runs the transport,
+    !! re-rotates the distributed overlaps to keep the checkpoint consistent, and
+    !! writes the new gauge to a .amn file.
+    use w90_comms, only: comms_reduce, mpirank
+    use w90_error_base, only: w90_error_type
+    use w90_error, only: set_error_alloc, set_error_dealloc
+    use w90_utility, only: utility_zgemm_new
+    use w90_parallel_transport_mod, only: w90_parallel_transport
+
+    implicit none
+
+    integer, intent(in) :: istdout, istderr
+    integer, intent(inout) :: ierr
+    type(lib_common_type), target, intent(inout) :: common_data
+
+    complex(kind=dp), allocatable :: m(:, :, :, :), mraw(:, :, :, :), uold(:, :, :)
+    complex(kind=dp), allocatable :: g(:, :, :), tmp(:, :), amn(:, :)
+    integer, allocatable :: global_k(:)
+    integer, pointer :: nw, nb, nk, nn
+    integer :: rank, nkrank, ikg, ikl, istat, iun, inn, ik2, m1, ip, ik
+    type(w90_error_type), allocatable :: error
+
+    ierr = 0
+    rank = mpirank(common_data%comm)
+    nkrank = count(common_data%dist_kpoints == rank)
+    nb => common_data%num_bands
+    nk => common_data%num_kpts
+    nn => common_data%kmesh_info%nntot
+    nw => common_data%num_wann
+
+    allocate (global_k(nkrank), stat=istat)
+    if (istat /= 0) then
+      call set_error_alloc(error, 'Error allocating global_k in run_parallel_transport', common_data%comm)
+      call prterr(error, ierr, istdout, istderr, common_data%comm)
+      return
+    end if
+    global_k = huge(1)
+    ikl = 1
+    do ikg = 1, nk
+      if (rank == common_data%dist_kpoints(ikg)) then
+        global_k(ikl) = ikg
+        ikl = ikl + 1
+      end if
+    end do
+
+    ! gather full Wannier-gauge overlaps
+    allocate (m(nw, nw, nn, nk), stat=istat)
+    if (istat /= 0) call set_error_alloc(error, 'Error allocating m in run_parallel_transport', common_data%comm)
+    if (allocated(error)) then
+      call prterr(error, ierr, istdout, istderr, common_data%comm)
+      return
+    end if
+    m = cmplx(0.d0, 0.d0, dp)
+    do ikl = 1, nkrank
+      ikg = global_k(ikl)
+      m(:, :, :, ikg) = common_data%m_matrix_local(1:nw, 1:nw, :, ikl)
+    end do
+    call comms_reduce(m(1, 1, 1, 1), nw*nw*nn*nk, 'SUM', error, common_data%comm)
+    if (allocated(error)) then
+      call prterr(error, ierr, istdout, istderr, common_data%comm)
+      return
+    end if
+
+    ! reconstruct raw overlaps  M_raw(:,:,nn,k) = U(k) . M_wann(:,:,nn,k) . U(k2)^H
+    allocate (mraw(nw, nw, nn, nk), uold(nw, nw, nk), g(nw, nw, nk), tmp(nw, nw))
+    uold = common_data%u_matrix
+    do ik = 1, nk
+      do inn = 1, nn
+        ik2 = common_data%kmesh_info%nnlist(ik, inn)
+        call utility_zgemm_new(uold(:, :, ik), m(:, :, inn, ik), tmp, 'N', 'N')
+        call utility_zgemm_new(tmp, uold(:, :, ik2), mraw(:, :, inn, ik), 'N', 'C')
+      end do
+    end do
+
+    ! run the parallel transport (updates common_data%u_matrix)
+    call w90_parallel_transport(common_data%kmesh_info, common_data%u_matrix, mraw, &
+                                common_data%kpt_latt, common_data%mp_grid, nw, nk, &
+                                common_data%w90_calculation%parallel_transport_use_gauge, &
+                                common_data%w90_calculation%parallel_transport_log_interp, &
+                                istdout, error, common_data%comm)
+    if (allocated(error)) then
+      call prterr(error, ierr, istdout, istderr, common_data%comm)
+      return
+    end if
+
+    ! re-rotate the distributed overlaps to the new gauge so the .chk stays
+    ! consistent:  G(k) = U_old(k)^H U_new(k),  M' = G(k)^H M G(k2)
+    do ik = 1, nk
+      call utility_zgemm_new(uold(:, :, ik), common_data%u_matrix(:, :, ik), g(:, :, ik), 'C', 'N')
+    end do
+    do ikl = 1, nkrank
+      ikg = global_k(ikl)
+      do inn = 1, nn
+        ik2 = common_data%kmesh_info%nnlist(ikg, inn)
+        call utility_zgemm_new(g(:, :, ikg), common_data%m_matrix_local(1:nw, 1:nw, inn, ikl), tmp, 'C', 'N')
+        call utility_zgemm_new(tmp, g(:, :, ik2), common_data%m_matrix_local(1:nw, 1:nw, inn, ikl), 'N', 'N')
+      end do
+    end do
+
+    ! write the new gauge as a .amn (total gauge A = u_opt . u)
+    if (rank == 0) then
+      allocate (amn(nb, nw))
+      open (newunit=iun, file=trim(common_data%seedname)//'.pt.amn', form='formatted', action='write')
+      write (iun, '(a)') 'Parallel-transport gauge written by wannier90'
+      write (iun, '(3i12)') nb, nk, nw
+      do ik = 1, nk
+        call utility_zgemm_new(common_data%u_matrix_opt(:, :, ik), common_data%u_matrix(:, :, ik), amn, 'N', 'N')
+        do ip = 1, nw
+          do m1 = 1, nb
+            write (iun, '(3i5,2f18.12)') m1, ip, ik, amn(m1, ip)
+          end do
+        end do
+      end do
+      close (iun)
+      write (istdout, '(1x,a)') 'parallel_transport: gauge written to '//trim(common_data%seedname)//'.pt.amn'
+      deallocate (amn)
+    end if
+
+    deallocate (m, mraw, uold, g, tmp, global_k)
+    if (istat /= 0) then
+      call set_error_dealloc(error, 'Error deallocating in run_parallel_transport', common_data%comm)
+      call prterr(error, ierr, istdout, istderr, common_data%comm)
+      return
+    end if
+  end subroutine run_parallel_transport
+
 end module w90_library_extra
