@@ -172,6 +172,7 @@ module w90_library
     type(sitesym_type) :: sitesym
     type(timer_list_type) :: timer
     type(transport_type) :: tran
+    type(mrwf_type) :: mrwf
     type(w90_calculation_type) :: w90_calculation
     type(w90_comm_type) :: comm
     type(w90_physical_constants_type) :: physics
@@ -417,6 +418,7 @@ contains
                                       common_data%wvfn_read, common_data%wann_control, &
                                       common_data%real_space_ham, common_data%kpoint_path, &
                                       common_data%w90_system, common_data%tran, &
+                                      common_data%mrwf, &
                                       common_data%print_output, common_data%wann_plot, &
                                       common_data%ws_region, common_data%real_lattice, &
                                       common_data%w90_calculation, common_data%physics%bohr, &
@@ -507,6 +509,7 @@ contains
                                       common_data%wvfn_read, common_data%wann_control, &
                                       common_data%real_space_ham, common_data%kpoint_path, &
                                       common_data%w90_system, common_data%tran, &
+                                      common_data%mrwf, &
                                       common_data%print_output, common_data%wann_plot, &
                                       common_data%ws_region, common_data%real_lattice, &
                                       common_data%w90_calculation, common_data%physics%bohr, &

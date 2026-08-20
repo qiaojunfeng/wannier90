@@ -184,7 +184,7 @@ contains
   subroutine w90_wannier90_readwrite_read(settings, band_plot, dis_control, dis_spheres, &
                                           dis_manifold, fermi_energy_list, fermi_surface_data, &
                                           output_file, wvfn_read, wann_control, real_space_ham, &
-                                          kpoint_path, w90_system, tran, print_output, wann_plot, &
+                                          kpoint_path, w90_system, tran, mrwf, print_output, wann_plot, &
                                           ws_region, real_lattice, w90_calculation, bohr, &
                                           symmetrize_eps, num_bands, num_kpts, num_wann, &
                                           optimisation, calc_only_A, cp_pp, gamma_only, &
@@ -217,6 +217,7 @@ contains
     type(real_space_ham_type), intent(inout) :: real_space_ham
     type(settings_type), intent(inout) :: settings
     type(transport_type), intent(inout) :: tran
+    type(mrwf_type), intent(inout) :: mrwf
     type(w90_calculation_type), intent(inout) :: w90_calculation
     type(w90_comm_type), intent(in) :: comm
     type(w90_error_type), allocatable, intent(out) :: error
@@ -269,6 +270,9 @@ contains
 
     call w90_wannier90_readwrite_read_transport(settings, w90_calculation%transport, tran, &
                                                 w90_calculation%restart, error, comm)
+    if (allocated(error)) return
+
+    call w90_wannier90_readwrite_read_mrwf(settings, w90_calculation%mrwf, num_wann, mrwf, error, comm)
     if (allocated(error)) return
 
     call w90_wannier90_readwrite_read_dist_cutoff(settings, real_space_ham, error, comm)
@@ -440,6 +444,80 @@ contains
     if (allocated(error)) return
 
   end subroutine w90_wannier90_readwrite_read_w90_calcs
+
+  !================================================!
+  subroutine w90_wannier90_readwrite_read_mrwf(settings, do_mrwf, num_wann, mrwf, error, comm)
+    !================================================!
+    !! Read the manifold-remixed Wannier function (MRWF) parameters.
+    !================================================!
+    use w90_error, only: w90_error_type, set_error_input
+    implicit none
+
+    type(settings_type), intent(inout) :: settings
+    logical, intent(in) :: do_mrwf
+    integer, intent(in) :: num_wann
+    type(mrwf_type), intent(inout) :: mrwf
+    type(w90_comm_type), intent(in) :: comm
+    type(w90_error_type), allocatable, intent(out) :: error
+
+    logical :: found, found_block
+    integer :: nrows, ig, prev
+
+    call w90_readwrite_get_keyword(settings, 'mrwf_num_val', found, error, comm, i_value=mrwf%num_val)
+    if (allocated(error)) return
+    call w90_readwrite_get_keyword(settings, 'mrwf_run_maxloc', found, error, comm, &
+                                   l_value=mrwf%run_maxloc)
+    if (allocated(error)) return
+    call w90_readwrite_get_keyword(settings, 'mrwf_write_unk', found, error, comm, &
+                                   l_value=mrwf%write_unk)
+    if (allocated(error)) return
+
+    ! auto-count and read the mrwf_manifolds block (2 columns: first_band last_band)
+    call w90_readwrite_get_block_length(settings, 'mrwf_manifolds', found_block, nrows, error, comm)
+    if (allocated(error)) return
+    if (found_block) then
+      mrwf%num_manifolds = nrows
+      allocate (mrwf%manifolds(2, nrows))
+      call w90_readwrite_get_keyword_block(settings, 'mrwf_manifolds', found, nrows, 2, 1.0_dp, &
+                                           error, comm, i_value=mrwf%manifolds)
+      if (allocated(error)) return
+    end if
+
+    if (.not. do_mrwf) return
+
+    ! exactly one of mrwf_num_val / mrwf_manifolds
+    if ((mrwf%num_val > 0) .eqv. found_block) then
+      call set_error_input(error, &
+                           'Error: mrwf requires exactly one of mrwf_num_val or an mrwf_manifolds block', comm)
+      return
+    end if
+
+    if (mrwf%num_val > 0) then
+      if (mrwf%num_val >= num_wann) then
+        call set_error_input(error, 'Error: mrwf_num_val must be > 0 and < num_wann', comm)
+        return
+      end if
+      mrwf%num_manifolds = 2
+      allocate (mrwf%manifolds(2, 2))
+      mrwf%manifolds(:, 1) = [1, mrwf%num_val]
+      mrwf%manifolds(:, 2) = [mrwf%num_val + 1, num_wann]
+    end if
+
+    ! manifolds must tile 1..num_wann as contiguous ranges
+    prev = 0
+    do ig = 1, mrwf%num_manifolds
+      if (mrwf%manifolds(1, ig) /= prev + 1 .or. mrwf%manifolds(2, ig) < mrwf%manifolds(1, ig)) then
+        call set_error_input(error, &
+                             'Error: mrwf_manifolds must be contiguous band ranges tiling 1..num_wann', comm)
+        return
+      end if
+      prev = mrwf%manifolds(2, ig)
+    end do
+    if (prev /= num_wann) then
+      call set_error_input(error, 'Error: mrwf_manifolds must cover all num_wann bands', comm)
+      return
+    end if
+  end subroutine w90_wannier90_readwrite_read_mrwf
 
   !================================================!
   subroutine w90_wannier90_readwrite_read_transport(settings, transport, tran, restart, error, comm)
@@ -942,7 +1020,8 @@ contains
     if (found) then
       if ((w90_calculation%restart .ne. 'default') .and. (w90_calculation%restart .ne. 'wannierise') &
           .and. (w90_calculation%restart .ne. 'plot') .and. (w90_calculation%restart .ne. 'transport') &
-          .and. (w90_calculation%restart .ne. 'parallel_transport')) then
+          .and. (w90_calculation%restart .ne. 'parallel_transport') &
+          .and. (w90_calculation%restart .ne. 'mrwf')) then
         call set_error_input(error, 'Error in input file: value of restart not recognised', comm)
         return
       else

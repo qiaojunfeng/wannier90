@@ -74,6 +74,7 @@ module w90_library_extra
   public :: read_chkpt
   public :: read_eigvals
   public :: run_parallel_transport
+  public :: run_mrwf
   public :: set_kpoint_distribution
   public :: write_chkpt
   public :: write_kmesh
@@ -642,5 +643,90 @@ contains
       return
     end if
   end subroutine run_parallel_transport
+
+  subroutine run_mrwf(common_data, istdout, istderr, ierr)
+    !! Driver for manifold-remixed Wannier functions. Gathers the full
+    !! Wannier-gauge overlaps, then splits the Wannierisation into isolated
+    !! manifolds and parallel-transports each (see w90_mrwf_mod).
+    use w90_comms, only: comms_reduce, mpirank
+    use w90_error_base, only: w90_error_type
+    use w90_error, only: set_error_alloc, set_error_dealloc, set_error_fatal
+    use w90_mrwf_mod, only: w90_mrwf
+
+    implicit none
+
+    integer, intent(in) :: istdout, istderr
+    integer, intent(inout) :: ierr
+    type(lib_common_type), target, intent(inout) :: common_data
+
+    complex(kind=dp), allocatable :: m(:, :, :, :)
+    integer, allocatable :: global_k(:)
+    character(len=256), allocatable :: outdirs(:)
+    integer, pointer :: nw, nb, nk, nn
+    integer :: rank, nkrank, ikg, ikl, istat, ig, nman
+    type(w90_error_type), allocatable :: error
+
+    ierr = 0
+    rank = mpirank(common_data%comm)
+    nkrank = count(common_data%dist_kpoints == rank)
+    nb => common_data%num_bands
+    nk => common_data%num_kpts
+    nn => common_data%kmesh_info%nntot
+    nw => common_data%num_wann
+
+    if (.not. associated(common_data%eigval)) then
+      call set_error_fatal(error, 'Error: eigval not associated for mrwf', common_data%comm)
+      call prterr(error, ierr, istdout, istderr, common_data%comm)
+      return
+    end if
+
+    allocate (global_k(nkrank), stat=istat)
+    global_k = huge(1)
+    ikl = 1
+    do ikg = 1, nk
+      if (rank == common_data%dist_kpoints(ikg)) then
+        global_k(ikl) = ikg
+        ikl = ikl + 1
+      end if
+    end do
+
+    ! gather full Wannier-gauge overlaps
+    allocate (m(nw, nw, nn, nk), stat=istat)
+    if (istat /= 0) call set_error_alloc(error, 'Error allocating m in run_mrwf', common_data%comm)
+    if (allocated(error)) then
+      call prterr(error, ierr, istdout, istderr, common_data%comm)
+      return
+    end if
+    m = cmplx(0.d0, 0.d0, dp)
+    do ikl = 1, nkrank
+      ikg = global_k(ikl)
+      m(:, :, :, ikg) = common_data%m_matrix_local(1:nw, 1:nw, :, ikl)
+    end do
+    call comms_reduce(m(1, 1, 1, 1), nw*nw*nn*nk, 'SUM', error, common_data%comm)
+    if (allocated(error)) then
+      call prterr(error, ierr, istdout, istderr, common_data%comm)
+      return
+    end if
+
+    ! output subdirectory names (mrwf_g1, mrwf_g2, ...)
+    nman = common_data%mrwf%num_manifolds
+    allocate (outdirs(nman))
+    do ig = 1, nman
+      write (outdirs(ig), '(a,i0)') 'mrwf_g', ig
+    end do
+
+    call w90_mrwf(common_data%kmesh_info, common_data%u_matrix, common_data%u_matrix_opt, m, &
+                  common_data%eigval, common_data%kpt_latt, common_data%real_lattice, &
+                  common_data%atom_data, common_data%mp_grid, nb, nw, nk, &
+                  common_data%mrwf%manifolds, outdirs, &
+                  common_data%w90_calculation%parallel_transport_log_interp, &
+                  common_data%seedname, istdout, error, common_data%comm)
+    if (allocated(error)) then
+      call prterr(error, ierr, istdout, istderr, common_data%comm)
+      return
+    end if
+
+    deallocate (m, global_k, outdirs)
+  end subroutine run_mrwf
 
 end module w90_library_extra

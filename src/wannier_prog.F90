@@ -105,7 +105,7 @@ program wannier
   integer, pointer :: nb, nk, nw, nn
   integer :: stdout, stderr
   logical, pointer :: pp
-  logical :: ld, lovlp, ldsnt, lwann, lplot, ltran, need_eigvals, lptg
+  logical :: ld, lovlp, ldsnt, lwann, lplot, ltran, need_eigvals, lptg, lmrwf
   type(lib_common_type), target :: common_data
   type(w90_error_type), allocatable :: error
   character(len=9) :: cdate, ctime
@@ -250,6 +250,7 @@ program wannier
   lplot = .true.
   ltran = .false.
   lptg = .false.
+  lmrwf = .false.
 
   if (restart == '') then
     if (rank == 0) write (stdout, '(1x,a/)') 'Starting a new Wannier90 calculation ...'
@@ -287,12 +288,21 @@ program wannier
       lplot = .false.
       ltran = .false.
       lptg = .true.
+    elseif (restart == 'mrwf') then
+      if (rank == 0) write (stdout, '(1x,a/)') 'Restarting Wannier90 from mrwf ...'
+      lovlp = .false.
+      ldsnt = .false.
+      lwann = .false.
+      lplot = .false.
+      ltran = .false.
+      lmrwf = .true.
       !else
       ! illegitimate restart choice, should declaim the acceptable choices
     end if
   end if
   ltran = (ltran .or. common_data%w90_calculation%transport)
   lptg = (lptg .or. common_data%w90_calculation%parallel_transport)
+  lmrwf = (lmrwf .or. common_data%w90_calculation%mrwf)
   ldsnt = (ldsnt .and. (nw < nb)) ! disentanglement only needed if space reduced
 
   ! circumstances where eigenvalues are needed are a little overcomplicated
@@ -302,6 +312,7 @@ program wannier
   need_eigvals = (need_eigvals .or. common_data%output_file%write_hr)
   need_eigvals = (need_eigvals .or. common_data%output_file%write_tb)
   need_eigvals = (need_eigvals .or. ldsnt) ! disentanglement anyway requires evals
+  need_eigvals = (need_eigvals .or. lmrwf) ! mrwf diagonalises the Wannier Hamiltonian
 
   if (need_eigvals) then
     allocate (eigval(nb, nk), stat=ierr)
@@ -341,6 +352,11 @@ program wannier
     call run_parallel_transport(common_data, stdout, stderr, ierr)
     if (ierr /= 0) stop
     call write_chkpt(common_data, 'postpt', stdout, stderr, ierr)
+    if (ierr /= 0) stop
+  end if
+
+  if (lmrwf) then
+    call run_mrwf(common_data, stdout, stderr, ierr)
     if (ierr /= 0) stop
   end if
 
