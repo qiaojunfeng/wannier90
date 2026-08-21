@@ -22,13 +22,25 @@
 
 module w90_mrwf_mod
 
+#ifdef MPI08
+  use mpi_f08
+#endif
+#ifdef MPI90
+  use mpi
+#endif
+
   use w90_constants, only: dp, cmplx_0, cmplx_1
-  use w90_types, only: kmesh_info_type, atom_data_type
+  use w90_types, only: kmesh_info_type, atom_data_type, dis_manifold_type, &
+                       ws_region_type, print_output_type, wannier_data_type, timer_list_type
   use w90_error_base, only: w90_error_type
-  use w90_error, only: set_error_input, set_error_fatal, set_error_alloc
+  use w90_error, only: set_error_input, set_error_fatal, set_error_alloc, set_error_file
   use w90_comms, only: w90_comm_type, mpirank
   use w90_utility, only: utility_zgemm_new, utility_diagonalize
   use w90_parallel_transport_mod, only: w90_parallel_transport
+
+#ifdef MPIH
+  include 'mpif.h'
+#endif
 
   implicit none
 
@@ -44,7 +56,9 @@ contains
   subroutine w90_mrwf(kmesh_info, u_matrix, u_matrix_opt, m_matrix, eigval, &
                       kpt_latt, real_lattice, atom_data, mp_grid, &
                       num_bands, num_wann, num_kpts, manifolds, outdirs, &
-                      log_interp, seedname, stdout, error, comm)
+                      log_interp, run_maxloc, write_unk, num_iter, dis_manifold, &
+                      have_disentangled, wvfn_formatted, wvfn_spin, &
+                      seedname, stdout, error, comm)
     type(kmesh_info_type), intent(in) :: kmesh_info
     complex(kind=dp), intent(in) :: u_matrix(:, :, :)      ! (nw, nw, nk)
     complex(kind=dp), intent(in) :: u_matrix_opt(:, :, :)  ! (nb, nw, nk)
@@ -56,14 +70,16 @@ contains
     integer, intent(in) :: mp_grid(3), num_bands, num_wann, num_kpts, stdout
     integer, intent(in) :: manifolds(:, :)                 ! (2, n_manifold)
     character(len=*), intent(in) :: outdirs(:)
-    logical, intent(in) :: log_interp
+    logical, intent(in) :: log_interp, run_maxloc, write_unk, have_disentangled, wvfn_formatted
+    integer, intent(in) :: num_iter, wvfn_spin
+    type(dis_manifold_type), intent(in) :: dis_manifold
     character(len=*), intent(in) :: seedname
     type(w90_error_type), allocatable, intent(out) :: error
     type(w90_comm_type), intent(in) :: comm
 
     complex(kind=dp), allocatable :: utot(:, :, :), hw(:, :), vmat(:, :, :), tmp(:, :)
     complex(kind=dp), allocatable :: mg(:, :, :, :), upt(:, :, :), vg(:, :), vg2(:, :)
-    complex(kind=dp), allocatable :: gsplit(:, :, :), tt(:, :)
+    complex(kind=dp), allocatable :: gsplit(:, :, :), tt(:, :), bg(:, :, :)
     real(kind=dp), allocatable :: dw(:, :), evk(:)
     integer :: rank, ik, ik2, inn, ig, a, b, ng, nman, i, m1
     character(len=256) :: gseed
@@ -124,6 +140,16 @@ contains
                                   .false., log_interp, stdout, error, comm)
       if (allocated(error)) return
 
+      ! optionally run a full maximal localisation on the manifold; upt (gauge) and
+      ! mg (overlaps) are updated in place, so the writes below pick up the MLWF gauge.
+      if (run_maxloc) then
+        if (rank == 0 .and. stdout > 0) write (stdout, '(1x,a,i0,a)') &
+          'mrwf: manifold ', ig, ' -> maximal localisation'
+        call mrwf_maxloc(kmesh_info, mg, upt, kpt_latt, real_lattice, mp_grid, &
+                         num_kpts, ng, num_iter, stdout, error, comm)
+        if (allocated(error)) return
+      end if
+
       ! assembled split gauge G_g(k) = U_tot(k) . V_g(k) . U_pt_g(k)   (nb x ng)
       allocate (gsplit(num_bands, ng, num_kpts))
       do ik = 1, num_kpts
@@ -145,6 +171,25 @@ contains
         call mrwf_write_win(trim(gseed)//'.win', ng, mp_grid, real_lattice, atom_data, &
                             kpt_latt, num_kpts)
         write (stdout, '(1x,a,i0,a)') 'mrwf: manifold ', ig, ' written to '//trim(outdirs(ig))
+
+        ! optionally rotate the UNK files into this manifold for WF plotting
+        if (write_unk) then
+          ! post-u_opt gauge B_g(k) = u(k) . V_g(k) . U_final_g(k)   (nw x ng)
+          allocate (bg(num_wann, ng, num_kpts))
+          do ik = 1, num_kpts
+            block
+              complex(kind=dp) :: uvg(num_wann, ng)
+              call utility_zgemm_new(u_matrix(:, :, ik), vmat(:, a:b, ik), uvg, 'N', 'N')
+              call utility_zgemm_new(uvg, upt(:, :, ik), bg(:, :, ik), 'N', 'N')
+            end block
+          end do
+          call mrwf_write_unk_files(trim(outdirs(ig)), bg, u_matrix_opt, dis_manifold, &
+                                    have_disentangled, num_bands, num_wann, ng, num_kpts, &
+                                    wvfn_formatted, wvfn_spin, stdout, error, comm)
+          deallocate (bg)
+          if (allocated(error)) return
+          write (stdout, '(1x,a,i0)') 'mrwf: UNK files rotated for manifold ', ig
+        end if
       end if
 
       deallocate (mg, upt, vg, vg2, tt, gsplit)
@@ -247,5 +292,177 @@ contains
     write (iun, '(a)') 'end kpoints'
     close (iun)
   end subroutine mrwf_write_win
+
+  !> Run a full maximal localisation (wann_main) on one manifold. `mg` (overlaps)
+  !> and `u` (gauge, seeded with the parallel-transport gauge) are updated in place
+  !> to the MLWF gauge. Runs redundantly on every rank using a serial communicator
+  !> (MPI_COMM_SELF), so wann_main's allreduce does not multiply the identical data.
+  subroutine mrwf_maxloc(kmesh_info, mg, u, kpt_latt, real_lattice, mp_grid, &
+                         num_kpts, ng, num_iter, stdout, error, comm)
+    use w90_wannierise_mod, only: wann_main
+    use w90_wannier90_types, only: wann_control_type, wann_omega_type, sitesym_type, &
+                                   w90_calculation_type, ham_logical_type
+    type(kmesh_info_type), intent(in) :: kmesh_info
+    complex(kind=dp), intent(in) :: mg(:, :, :, :)     ! M^g in the V_g reference basis
+    complex(kind=dp), intent(inout) :: u(:, :, :)      ! seed U_pt in, U_final out
+    real(kind=dp), intent(in) :: kpt_latt(:, :), real_lattice(3, 3)
+    integer, intent(in) :: mp_grid(3), num_kpts, ng, num_iter, stdout
+    type(w90_error_type), allocatable, intent(out) :: error
+    type(w90_comm_type), intent(in) :: comm
+
+    type(ham_logical_type) :: hl
+    type(wann_control_type) :: wctl
+    type(wann_omega_type) :: om
+    type(sitesym_type) :: ss
+    type(print_output_type) :: po
+    type(ws_region_type) :: wsr
+    type(w90_calculation_type) :: wcalc
+    type(wannier_data_type) :: wd
+    type(timer_list_type) :: tmr
+    type(w90_comm_type) :: selfcomm
+    complex(kind=dp), allocatable :: ham_k(:, :, :), ham_r(:, :, :)
+    integer, allocatable :: irvec(:, :), ndegen(:), distk(:)
+    real(kind=dp), allocatable :: wct(:, :)
+    integer :: nrpts, rpt_origin, ik, inn, ik2
+    complex(kind=dp), allocatable :: rt(:, :), mgc(:, :, :, :)
+
+    ! wann_main expects m_matrix in the CURRENT WF gauge, i.e. <w|w_kb> with the
+    ! seed gauge `u` already applied, and rotates it in place. Work on a copy so
+    ! the caller's mg stays in the V_g reference basis for the .mmn output:
+    !   mgc(k,b) = u(k)^H . M^g(k,b) . u(k2).
+    allocate (mgc(ng, ng, kmesh_info%nntot, num_kpts), rt(ng, ng))
+    do ik = 1, num_kpts
+      do inn = 1, kmesh_info%nntot
+        ik2 = kmesh_info%nnlist(ik, inn)
+        call utility_zgemm_new(u(:, :, ik), mg(:, :, inn, ik), rt, 'C', 'N') ! u^H . M
+        call utility_zgemm_new(rt, u(:, :, ik2), mgc(:, :, inn, ik), 'N', 'N')
+      end do
+    end do
+    deallocate (rt)
+
+    wctl%num_iter = num_iter
+    allocate (wd%centres(3, ng), wd%spreads(ng))
+    wd%centres = 0.0_dp
+    wd%spreads = 0.0_dp
+    allocate (distk(num_kpts))
+    distk = 0  ! all kpoints local to rank 0 of the serial communicator
+    nrpts = 0
+    rpt_origin = 0
+#ifdef MPI
+    selfcomm%comm = MPI_COMM_SELF
+#else
+    selfcomm = comm
+#endif
+
+    call wann_main(hl, kmesh_info, kpt_latt, wctl, om, ss, po, wd, wsr, wcalc, &
+                   ham_k, ham_r, mgc, u, real_lattice, wct, irvec, mp_grid, ndegen, &
+                   nrpts, num_kpts, ng, ng, 3, rpt_origin, 's-k', 'bulk', .false., &
+                   stdout, tmr, distk, error, selfcomm)
+    deallocate (mgc)
+  end subroutine mrwf_maxloc
+
+  !> Rotate the input UNK files into one manifold and write them to `outdir`.
+  !> Follows plot_wannier's two-stage convention: stage 1 collapses the
+  !> `num_inc` in-window Bloch bands to `num_wann` states via `u_opt`, stage 2
+  !> applies the post-u_opt manifold gauge `bg` (nw x ng).
+  subroutine mrwf_write_unk_files(outdir, bg, u_opt, dis_manifold, have_dis, &
+                                  num_bands, num_wann, ng, num_kpts, formatted, spin, &
+                                  stdout, error, comm)
+    character(len=*), intent(in) :: outdir
+    complex(kind=dp), intent(in) :: bg(:, :, :)      ! (nw, ng, nk)
+    complex(kind=dp), intent(in) :: u_opt(:, :, :)   ! (nb, nw, nk)
+    type(dis_manifold_type), intent(in) :: dis_manifold
+    logical, intent(in) :: have_dis, formatted
+    integer, intent(in) :: num_bands, num_wann, ng, num_kpts, spin, stdout
+    type(w90_error_type), allocatable, intent(out) :: error
+    type(w90_comm_type), intent(in) :: comm
+
+    complex(kind=dp), allocatable :: wtmp(:, :), rwv(:, :), cwv(:, :), buf(:)
+    logical, allocatable :: inc(:)
+    character(len=60) :: fin, fout
+    integer :: iun, oun, ik, ib, iw, iwg, num_inc, cnt, ngx, ngy, ngz, nkk, nbnd, ip, ngpts, ierr
+    real(kind=dp) :: rr, ci
+
+    do ik = 1, num_kpts
+      write (fin, '(a,i5.5,a,i1)') 'UNK', ik, '.', spin
+      write (fout, '(a,a,i5.5,a,i1)') trim(outdir)//'/', 'UNK', ik, '.', spin
+      if (formatted) then
+        open (newunit=iun, file=fin, form='formatted', status='old', iostat=ierr)
+      else
+        open (newunit=iun, file=fin, form='unformatted', status='old', iostat=ierr)
+      end if
+      if (ierr /= 0) then
+        call set_error_file(error, 'mrwf_write_unk: cannot open '//trim(fin), comm)
+        return
+      end if
+      if (formatted) then
+        read (iun, *) ngx, ngy, ngz, nkk, nbnd
+      else
+        read (iun) ngx, ngy, ngz, nkk, nbnd
+      end if
+      ngpts = ngx*ngy*ngz
+
+      allocate (inc(nbnd))
+      if (have_dis) then
+        inc = dis_manifold%lwindow(1:nbnd, ik)
+        num_inc = dis_manifold%ndimwin(ik)
+      else
+        inc = .true.
+        num_inc = num_bands
+      end if
+      allocate (wtmp(ngpts, num_inc), rwv(ngpts, num_wann), cwv(ngpts, ng), buf(ngpts))
+
+      cnt = 0
+      do ib = 1, nbnd
+        if (formatted) then
+          do ip = 1, ngpts
+            read (iun, *) rr, ci
+            buf(ip) = cmplx(rr, ci, dp)
+          end do
+        else
+          read (iun) (buf(ip), ip=1, ngpts)
+        end if
+        if (inc(ib)) then
+          cnt = cnt + 1
+          wtmp(:, cnt) = buf
+        end if
+      end do
+      close (iun)
+
+      ! stage 1: collapse in-window bands to num_wann states via u_opt
+      rwv = cmplx_0
+      do iw = 1, num_wann
+        do ib = 1, num_inc
+          rwv(:, iw) = rwv(:, iw) + u_opt(ib, iw, ik)*wtmp(:, ib)
+        end do
+      end do
+      ! stage 2: apply the post-u_opt manifold gauge
+      cwv = cmplx_0
+      do iwg = 1, ng
+        do iw = 1, num_wann
+          cwv(:, iwg) = cwv(:, iwg) + bg(iw, iwg, ik)*rwv(:, iw)
+        end do
+      end do
+
+      if (formatted) then
+        open (newunit=oun, file=fout, form='formatted', action='write')
+        write (oun, '(5i8)') ngx, ngy, ngz, ik, ng
+        do iwg = 1, ng
+          do ip = 1, ngpts
+            write (oun, '(2f20.12)') real(cwv(ip, iwg), dp), aimag(cwv(ip, iwg))
+          end do
+        end do
+      else
+        open (newunit=oun, file=fout, form='unformatted', action='write')
+        write (oun) ngx, ngy, ngz, ik, ng
+        do iwg = 1, ng
+          write (oun) (cwv(ip, iwg), ip=1, ngpts)
+        end do
+      end if
+      close (oun)
+
+      deallocate (inc, wtmp, rwv, cwv, buf)
+    end do
+  end subroutine mrwf_write_unk_files
 
 end module w90_mrwf_mod

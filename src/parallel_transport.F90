@@ -646,7 +646,8 @@ contains
   !> gauge, used as the seed when `use_gauge` is true (otherwise the identity).
   !> On exit `u_matrix` holds the parallel-transport gauge.
   subroutine w90_parallel_transport(kmesh_info, u_matrix, m_matrix, kpt_latt, mp_grid, &
-                                    num_wann, num_kpts, use_gauge, log_interp, stdout, error, comm)
+                                    num_wann, num_kpts, use_gauge, log_interp, stdout, error, comm, &
+                                    eps_initial, eps_final)
     type(kmesh_info_type), intent(in) :: kmesh_info
     complex(kind=dp), intent(inout) :: u_matrix(:, :, :)
     complex(kind=dp), intent(in) :: m_matrix(:, :, :, :)
@@ -655,6 +656,8 @@ contains
     logical, intent(in) :: use_gauge, log_interp
     type(w90_error_type), allocatable, intent(out) :: error
     type(w90_comm_type), intent(in) :: comm
+    real(kind=dp), intent(out), optional :: eps_initial, eps_final
+    !! initial and final neighbour-overlap smoothness error (for reporting)
 
     integer, allocatable :: xyz_k(:, :, :), nn_plus(:, :), nn_minus(:, :), line(:)
     complex(kind=dp), allocatable :: u0(:, :, :), u(:, :, :)
@@ -831,6 +834,8 @@ contains
       write (stdout, '(3x,a,f12.6)') 'parallel_transport: initial smoothness error = ', eps0
       write (stdout, '(3x,a,f12.6)') 'parallel_transport: final   smoothness error = ', eps1
     end if
+    if (present(eps_initial)) eps_initial = eps0
+    if (present(eps_final)) eps_final = eps1
 
     u_matrix = u
 

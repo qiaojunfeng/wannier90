@@ -538,6 +538,7 @@ contains
     integer, allocatable :: global_k(:)
     integer, pointer :: nw, nb, nk, nn
     integer :: rank, nkrank, ikg, ikl, istat, iun, inn, ik2, m1, ip, ik
+    real(kind=dp) :: eps0, eps1
     type(w90_error_type), allocatable :: error
 
     ierr = 0
@@ -597,10 +598,15 @@ contains
                                 common_data%kpt_latt, common_data%mp_grid, nw, nk, &
                                 common_data%w90_calculation%parallel_transport_use_gauge, &
                                 common_data%w90_calculation%parallel_transport_log_interp, &
-                                istdout, error, common_data%comm)
+                                istdout, error, common_data%comm, &
+                                eps_initial=eps0, eps_final=eps1)
     if (allocated(error)) then
       call prterr(error, ierr, istdout, istderr, common_data%comm)
       return
+    end if
+    if (rank == 0) then
+      write (istdout, '(1x,a,f12.6)') 'parallel_transport: initial smoothness error =', eps0
+      write (istdout, '(1x,a,f12.6)') 'parallel_transport: final   smoothness error =', eps1
     end if
 
     ! re-rotate the distributed overlaps to the new gauge so the .chk stays
@@ -715,15 +721,24 @@ contains
       write (outdirs(ig), '(a,i0)') 'mrwf_g', ig
     end do
 
-    call w90_mrwf(common_data%kmesh_info, common_data%u_matrix, common_data%u_matrix_opt, m, &
-                  common_data%eigval, common_data%kpt_latt, common_data%real_lattice, &
-                  common_data%atom_data, common_data%mp_grid, nb, nw, nk, &
-                  common_data%mrwf%manifolds, outdirs, &
-                  common_data%w90_calculation%parallel_transport_log_interp, &
-                  common_data%seedname, istdout, error, common_data%comm)
-    if (allocated(error)) then
-      call prterr(error, ierr, istdout, istderr, common_data%comm)
-      return
+    ! Only the root rank holds the full (reduced) overlaps and does the serial
+    ! split/transport/localise + file writing; the sub-calls it makes are either
+    ! serial or use a self-communicator, so no global collective is entered here.
+    if (rank == 0) then
+      call w90_mrwf(common_data%kmesh_info, common_data%u_matrix, common_data%u_matrix_opt, m, &
+                    common_data%eigval, common_data%kpt_latt, common_data%real_lattice, &
+                    common_data%atom_data, common_data%mp_grid, nb, nw, nk, &
+                    common_data%mrwf%manifolds, outdirs, &
+                    common_data%w90_calculation%parallel_transport_log_interp, &
+                    common_data%mrwf%run_maxloc, common_data%mrwf%write_unk, &
+                    common_data%wann_control%num_iter, common_data%dis_manifold, &
+                    common_data%have_disentangled, common_data%wvfn_read%formatted, &
+                    common_data%wvfn_read%spin_channel, &
+                    common_data%seedname, istdout, error, common_data%comm)
+      if (allocated(error)) then
+        call prterr(error, ierr, istdout, istderr, common_data%comm)
+        return
+      end if
     end if
 
     deallocate (m, global_k, outdirs)

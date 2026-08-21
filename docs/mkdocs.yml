@@ -22,6 +22,7 @@ nav:
           - "Post-processing": "user_guide/wannier90/postproc.md"
           - "Library mode": "user_guide/wannier90/library_mode.md"
           - "Transport": "user_guide/wannier90/transport.md"
+          - "Parallel transport & MRWF": "user_guide/wannier90/parallel_transport_mrwf.md"
           - "Files": "user_guide/wannier90/files.md"
           - "Notes on interpolations": "user_guide/wannier90/notes_interpolations.md"
           - "Sample inputs": "user_guide/wannier90/sample_inputs.md"

@@ -606,3 +606,10 @@ all = wannier_only postw90_only checkpoint
 # workaround by specifying different test sets
 par = wannier_only postw90_only partest* checkpoint
 default =  all
+
+# MRWF: split silicon 4 valence + 4 conduction into two manifolds, parallel-transport
+# each, and maximally localise (checks the final conduction-manifold spreads/Omega)
+[testw90_mrwf]
+program = WANNIER90_MRWF_OK
+inputs_args = ('silicon.win', '')
+output = silicon.wout
